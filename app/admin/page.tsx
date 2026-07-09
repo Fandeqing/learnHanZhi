@@ -11,6 +11,7 @@ export default function AdminPage() {
   const [file, setFile] = useState<File | null>(null);
   const [jsonText, setJsonText] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
 
   async function importFromFile(event: FormEvent<HTMLFormElement>) {
@@ -92,6 +93,43 @@ export default function AdminPage() {
     }
   }
 
+  async function clearAllUserData() {
+    const confirmed = window.confirm(
+      "Clear all user data? This deletes users, settings, progress, study sessions, cards, and purchases. Characters and sections will be preserved.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setClearing(true);
+
+    try {
+      const response = await fetch("/api/admin/user-data/clear", {
+        method: "POST",
+      });
+      const responseText = await response.text();
+
+      setResult({
+        status: response.status,
+        body: responseText ? JSON.parse(responseText) : null,
+      });
+    } catch (error) {
+      setResult({
+        status: 0,
+        body: {
+          success: false,
+          error: {
+            code: "REQUEST_FAILED",
+            message: error instanceof Error ? error.message : "Request failed.",
+          },
+        },
+      });
+    } finally {
+      setClearing(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-zinc-950 px-4 py-8 text-zinc-100 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -108,6 +146,28 @@ export default function AdminPage() {
             table. Existing characters are matched by <code className="text-zinc-200">hanzi</code>.
           </p>
         </header>
+
+        <section className="rounded border border-red-900/60 bg-red-950/20 p-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-red-100">
+                Clear User Data
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-red-200/70">
+                Deletes users, settings, progress, study sessions, session cards,
+                and purchases. Keeps all sections and characters.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={clearing || loading}
+              onClick={clearAllUserData}
+              className="h-10 rounded bg-red-500 px-4 text-sm font-medium text-white hover:bg-red-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            >
+              {clearing ? "Clearing..." : "Clear User Data"}
+            </button>
+          </div>
+        </section>
 
         <section className="grid gap-4 lg:grid-cols-2">
           <form
