@@ -186,6 +186,9 @@ model StudySessionCard {
   rating                   ReviewRating?
   revealed                 Boolean       @default(false)
   reviewedAt               DateTime?     @db.Timestamptz(6)
+  statusBefore             CharacterStatus?
+  statusAfter              CharacterStatus?
+  becameSeal               Boolean       @default(false)
   createdAt                DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime      @updatedAt @db.Timestamptz(6)
 
@@ -193,7 +196,9 @@ model StudySessionCard {
   user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   character                Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
+  @@unique([sessionId, characterId])
   @@index([sessionId])
+  @@index([sessionId, becameSeal])
   @@index([userId, characterId])
   @@index([rating])
   @@map("study_session_cards")

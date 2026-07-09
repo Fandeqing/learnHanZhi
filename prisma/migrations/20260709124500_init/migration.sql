@@ -105,6 +105,9 @@ CREATE TABLE "study_session_cards" (
   "rating" "ReviewRating",
   "revealed" BOOLEAN NOT NULL DEFAULT false,
   "reviewedAt" TIMESTAMPTZ(6),
+  "statusBefore" "CharacterStatus",
+  "statusAfter" "CharacterStatus",
+  "becameSeal" BOOLEAN NOT NULL DEFAULT false,
   "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" TIMESTAMPTZ(6) NOT NULL,
   CONSTRAINT "study_session_cards_pkey" PRIMARY KEY ("id")
@@ -141,7 +144,9 @@ CREATE INDEX "user_character_progress_characterId_idx" ON "user_character_progre
 CREATE INDEX "study_sessions_userId_startedAt_idx" ON "study_sessions"("userId", "startedAt");
 CREATE INDEX "study_sessions_sessionType_idx" ON "study_sessions"("sessionType");
 CREATE INDEX "study_sessions_sectionId_idx" ON "study_sessions"("sectionId");
+CREATE UNIQUE INDEX "study_session_cards_sessionId_characterId_key" ON "study_session_cards"("sessionId", "characterId");
 CREATE INDEX "study_session_cards_sessionId_idx" ON "study_session_cards"("sessionId");
+CREATE INDEX "study_session_cards_sessionId_becameSeal_idx" ON "study_session_cards"("sessionId", "becameSeal");
 CREATE INDEX "study_session_cards_userId_characterId_idx" ON "study_session_cards"("userId", "characterId");
 CREATE INDEX "study_session_cards_rating_idx" ON "study_session_cards"("rating");
 CREATE UNIQUE INDEX "purchases_transactionId_key" ON "purchases"("transactionId");
