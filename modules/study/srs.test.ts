@@ -33,32 +33,41 @@ describe("calculateSrsUpdate", () => {
     expect(result.nextReviewAt.toISOString()).toBe("2026-07-12T00:00:00.000Z");
   });
 
-  it("marks learned after two consecutive successful ratings", () => {
+  it("marks learned immediately on GOOD", () => {
     const result = calculateSrsUpdate(
       baseInput({
         rating: ReviewRating.GOOD,
-        successCount: 1,
-        consecutiveSuccessCount: 1,
       }),
     );
 
     expect(result.status).toBe(CharacterStatus.LEARNED);
-    expect(result.successCount).toBe(2);
-    expect(result.consecutiveSuccessCount).toBe(2);
+    expect(result.successCount).toBe(1);
+    expect(result.consecutiveSuccessCount).toBe(1);
     expect(result.nextReviewAt.toISOString()).toBe("2026-07-14T00:00:00.000Z");
   });
 
-  it("marks mastered after four successful reviews", () => {
+  it("marks mastered immediately on EASY", () => {
     const result = calculateSrsUpdate(
       baseInput({
         rating: ReviewRating.EASY,
-        successCount: 3,
-        consecutiveSuccessCount: 1,
       }),
     );
 
     expect(result.status).toBe(CharacterStatus.MASTERED);
     expect(result.isMastered).toBe(true);
     expect(result.nextReviewAt.toISOString()).toBe("2026-07-18T00:00:00.000Z");
+  });
+
+  it("downgrades mastered to learned on AGAIN", () => {
+    const result = calculateSrsUpdate(
+      baseInput({
+        rating: ReviewRating.AGAIN,
+        currentStatus: CharacterStatus.MASTERED,
+        isMastered: true,
+      }),
+    );
+
+    expect(result.status).toBe(CharacterStatus.LEARNED);
+    expect(result.isMastered).toBe(false);
   });
 });

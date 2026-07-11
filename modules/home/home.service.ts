@@ -73,8 +73,9 @@ export async function getHome(userId: string) {
 
   const [
     completedTodayCount,
-    todayNewCompletions,
+    plannedNewCompletions,
     todayExtraNewCount,
+    todayNewCompletions,
     latestDailySession,
     masteredCount,
     learnedCount,
@@ -102,6 +103,15 @@ export async function getHome(userId: string) {
           sessionType: StudySessionType.LEARN_MORE,
         },
       },
+    }),
+    prisma.dailyCharacterCompletion.findMany({
+      where: {
+        userId,
+        studyDate,
+        cardType: StudyCardType.NEW,
+      },
+      orderBy: { createdAt: "asc" },
+      include: { character: true },
     }),
     prisma.studySession.findFirst({
       where: {
@@ -134,7 +144,7 @@ export async function getHome(userId: string) {
   ]);
 
   const todayNewLearnedCount = Math.min(
-    todayNewCompletions.length,
+    plannedNewCompletions.length,
     settings.dailyNewCharacterGoal,
   );
   const dailyNewCharacterCount = Math.min(
@@ -167,12 +177,12 @@ export async function getHome(userId: string) {
   );
   const plannedNewCharacters = availableNewCharacters
     .filter((character) => !completedNewCharacterIds.has(character.id))
-    .slice(0, Math.max(settings.dailyNewCharacterGoal - completedNewCharacters.length, 0))
+    .slice(0, Math.max(settings.dailyNewCharacterGoal - plannedNewCompletions.length, 0))
     .map(serializeCharacterSummary);
   const todayNewCharacters = [
     ...completedNewCharacters,
     ...plannedNewCharacters,
-  ].slice(0, settings.dailyNewCharacterGoal);
+  ];
 
   return {
     todayNewGoal: settings.dailyNewCharacterGoal,

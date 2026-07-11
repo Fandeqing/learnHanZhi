@@ -27,6 +27,12 @@ const reviewStatuses = [
   CharacterStatus.MASTERED,
 ];
 
+const practiceSessionTypes = new Set<StudySessionType>([
+  StudySessionType.PRACTICE_AGAIN,
+  StudySessionType.REVIEW_AGAIN,
+  StudySessionType.MANUAL_REVIEW,
+]);
+
 const sessionInclude = {
   cards: {
     orderBy: { createdAt: "asc" },
@@ -383,7 +389,7 @@ async function findDueReviewProgress(
     now: Date;
   },
 ) {
-  return tx.userCharacterProgress.findMany({
+  const progress = await tx.userCharacterProgress.findMany({
     where: {
       userId: input.userId,
       status: { in: reviewStatuses },
@@ -392,6 +398,21 @@ async function findDueReviewProgress(
     },
     orderBy: { nextReviewAt: "asc" },
     include: { character: true },
+  });
+
+  const priority = new Map<CharacterStatus, number>([
+    [CharacterStatus.LEARNING, 0],
+    [CharacterStatus.LEARNED, 1],
+    [CharacterStatus.MASTERED, 2],
+  ]);
+
+  return progress.sort((a, b) => {
+    const statusDiff = (priority.get(a.status) ?? 99) - (priority.get(b.status) ?? 99);
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    return (a.nextReviewAt?.getTime() ?? 0) - (b.nextReviewAt?.getTime() ?? 0);
   });
 }
 
@@ -464,6 +485,23 @@ export async function submitReviewRating(
       );
     }
 
+    const session = await tx.studySession.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+      },
+      select: {
+        sessionType: true,
+      },
+    });
+
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
+    }
+
+    const isPractice = practiceSessionTypes.has(session.sessionType);
+    const completed = rating !== ReviewRating.AGAIN && rating !== ReviewRating.HARD;
+
     const existingProgress = await tx.userCharacterProgress.findUnique({
       where: {
         userId_characterId: {
@@ -481,8 +519,15 @@ export async function submitReviewRating(
       throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
     }
 
-    const progress =
-      existingProgress ??
+    if (isPractice && !existingProgress) {
+      throw new ApiError(
+        403,
+        "CHARACTER_DETAIL_LOCKED",
+        "Learn this character before practicing it.",
+      );
+    }
+
+    const progress = existingProgress ??
       (await tx.userCharacterProgress.create({
         data: {
           userId,
@@ -501,6 +546,35 @@ export async function submitReviewRating(
       consecutiveSuccessCount: progress.consecutiveSuccessCount,
       isMastered: progress.isMastered,
     });
+
+    if (isPractice) {
+      const updatedCard = await tx.studySessionCard.update({
+        where: { id: card.id },
+        data: completed
+          ? {
+              rating,
+              reviewedAt: now,
+              revealed: true,
+              statusBefore: card.statusBefore ?? progress.status,
+              statusAfter: progress.status,
+              becameSeal: false,
+            }
+          : {
+              revealed: true,
+              statusBefore: card.statusBefore ?? progress.status,
+              statusAfter: progress.status,
+              becameSeal: false,
+            },
+      });
+
+      return {
+        card: updatedCard,
+        progress,
+        becameSeal: false,
+        createdDailyCompletion: false,
+        completed,
+      };
+    }
 
     const wasSeal =
       progress.status === CharacterStatus.LEARNED ||
@@ -525,14 +599,21 @@ export async function submitReviewRating(
 
     const updatedCard = await tx.studySessionCard.update({
       where: { id: card.id },
-      data: {
-        rating,
-        reviewedAt: now,
-        revealed: true,
-        statusBefore: progress.status,
-        statusAfter: updatedProgress.status,
-        becameSeal,
-      },
+      data: completed
+        ? {
+            rating,
+            reviewedAt: now,
+            revealed: true,
+            statusBefore: card.statusBefore ?? progress.status,
+            statusAfter: updatedProgress.status,
+            becameSeal,
+          }
+        : {
+            revealed: true,
+            statusBefore: card.statusBefore ?? progress.status,
+            statusAfter: updatedProgress.status,
+            becameSeal,
+          },
     });
 
     const existingCompletion = await tx.dailyCharacterCompletion.findUnique({
@@ -553,7 +634,7 @@ export async function submitReviewRating(
     });
 
     let createdDailyCompletion = false;
-    if (!existingCompletion) {
+    if (completed && !existingCompletion) {
       await tx.dailyCharacterCompletion.create({
         data: {
           userId,
@@ -579,6 +660,7 @@ export async function submitReviewRating(
       progress: updatedProgress,
       becameSeal,
       createdDailyCompletion,
+      completed,
     };
   });
 
@@ -596,6 +678,7 @@ export async function submitReviewRating(
     },
     becameSeal: result.becameSeal,
     countedForToday: result.createdDailyCompletion,
+    completed: result.completed,
   };
 }
 
@@ -675,6 +758,12 @@ export async function completeStudySession(userId: string, sessionId: string) {
       hanzi: card.character.hanzi,
       status: card.statusAfter,
     }));
+  const newMasteredCharacters = reviewedCards.filter(
+    (card) =>
+      card.cardType === StudyCardType.NEW &&
+      card.statusAfter === CharacterStatus.MASTERED &&
+      card.statusBefore !== CharacterStatus.MASTERED,
+  ).length;
   const masteredToday = reviewedCards.filter(
     (card) =>
       card.statusAfter === CharacterStatus.MASTERED &&
@@ -689,6 +778,19 @@ export async function completeStudySession(userId: string, sessionId: string) {
     },
   });
 
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { isPro: true },
+  });
+  const stillDueCount = await prisma.userCharacterProgress.count({
+    where: {
+      userId,
+      status: { in: reviewStatuses },
+      nextReviewAt: { lte: new Date() },
+      character: user.isPro ? undefined : { isFree: true },
+    },
+  });
+
   return {
     sessionId: session.id,
     sessionType: session.sessionType,
@@ -696,7 +798,9 @@ export async function completeStudySession(userId: string, sessionId: string) {
     reviewsCompleted: reviewCards.length,
     uniqueCardsCountedToday: dailyCompletions.length,
     newSealsCollected: newSeals.length,
+    newMasteredCharacters,
     masteredToday,
+    stillDueCount,
     newSeals,
   };
 }

@@ -28,33 +28,34 @@ export function calculateSrsUpdate(input: {
     : 0;
 
   const nextReviewAt =
-    input.rating === ReviewRating.GOOD
-      ? addDays(input.now, 3)
-      : addDays(input.now, 1);
-
-  const normalizedNextReviewAt =
     input.rating === ReviewRating.EASY || input.rating === ReviewRating.KNOW
-    ? addDays(input.now, 7)
-    : nextReviewAt;
+      ? addDays(input.now, 7)
+      : input.rating === ReviewRating.GOOD
+        ? addDays(input.now, 3)
+        : addDays(input.now, 1);
 
-  let status = success ? input.currentStatus : CharacterStatus.LEARNING;
-  let isMastered = input.isMastered;
+  let status: CharacterStatus;
 
-  if (successCount >= 4 || input.currentStatus === CharacterStatus.MASTERED) {
+  if (input.rating === ReviewRating.AGAIN || input.rating === ReviewRating.HARD) {
+    status =
+      input.currentStatus === CharacterStatus.MASTERED
+        ? CharacterStatus.LEARNED
+        : CharacterStatus.LEARNING;
+  } else if (input.rating === ReviewRating.EASY || input.rating === ReviewRating.KNOW) {
     status = CharacterStatus.MASTERED;
-    isMastered = true;
-  } else if (consecutiveSuccessCount >= 2) {
-    status = CharacterStatus.LEARNED;
-  } else if (success || input.currentStatus === CharacterStatus.NEW) {
-    status = CharacterStatus.LEARNING;
+  } else {
+    status =
+      input.currentStatus === CharacterStatus.MASTERED
+        ? CharacterStatus.MASTERED
+        : CharacterStatus.LEARNED;
   }
 
   return {
-    nextReviewAt: normalizedNextReviewAt,
+    nextReviewAt,
     reviewCount,
     successCount,
     consecutiveSuccessCount,
     status,
-    isMastered,
+    isMastered: status === CharacterStatus.MASTERED,
   };
 }
