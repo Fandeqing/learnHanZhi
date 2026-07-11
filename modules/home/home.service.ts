@@ -3,6 +3,10 @@ import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
 import {
+  findAvailableNewCharactersForCurrentLevel,
+  getBambooProgress,
+} from "@/modules/levels/level-progress.service";
+import {
   assertSectionUnlocked,
   getNextSection,
   getSectionsForUser,
@@ -47,27 +51,9 @@ export async function getHome(userId: string) {
     include: { character: true },
   });
 
-  const availableNewCharacters = await prisma.character.findMany({
-    where: {
-      sectionId: currentSection.id,
-      ...(user.isPro ? {} : { isFree: true }),
-      OR: [
-        {
-          userProgress: {
-            none: { userId },
-          },
-        },
-        {
-          userProgress: {
-            some: {
-              userId,
-              status: CharacterStatus.NEW,
-            },
-          },
-        },
-      ],
-    },
-    orderBy: { orderIndex: "asc" },
+  const availableNewCharacters = await findAvailableNewCharactersForCurrentLevel(prisma, {
+    userId,
+    isPro: user.isPro,
     take: settings.dailyNewCharacterGoal,
   });
 
@@ -80,6 +66,7 @@ export async function getHome(userId: string) {
     masteredCount,
     learnedCount,
     accessibleCharacterCount,
+    bamboo,
   ] = await Promise.all([
     prisma.dailyCharacterCompletion.count({ where: { userId, studyDate } }),
     prisma.dailyCharacterCompletion.findMany({
@@ -141,6 +128,7 @@ export async function getHome(userId: string) {
     prisma.character.count({
       where: user.isPro ? undefined : { isFree: true },
     }),
+    getBambooProgress(userId),
   ]);
 
   const todayNewLearnedCount = Math.min(
@@ -206,6 +194,7 @@ export async function getHome(userId: string) {
     suggestedPrimaryAction,
     estimatedMinutes: Math.ceil((totalCards * 15) / 60),
     currentSection: currentSectionProgress,
+    bamboo,
     remainingToUnlock: nextSection?.remainingToUnlock ?? 0,
     nextSectionName: nextSection?.name ?? null,
     sealBookPreview,

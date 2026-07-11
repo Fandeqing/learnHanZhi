@@ -10,6 +10,10 @@ import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
 import {
+  findAvailableNewCharactersForCurrentLevel,
+  getNewlyCompletedLevelIndexes,
+} from "@/modules/levels/level-progress.service";
+import {
   assertSectionUnlocked,
   refreshUserSectionUnlocks,
 } from "@/modules/sections/section.service";
@@ -73,9 +77,8 @@ export async function createDailyStudySession(userId: string) {
   await assertSectionUnlocked(userId, settings.currentSectionId);
 
   const session = await prisma.$transaction(async (tx) => {
-    const newCharacters = await findAvailableNewCharacters(tx, {
+    const newCharacters = await findAvailableNewCharactersForCurrentLevel(tx, {
       userId,
-      sectionId: settings.currentSectionId!,
       isPro: user.isPro,
       take: settings.dailyNewCharacterGoal,
     });
@@ -88,7 +91,7 @@ export async function createDailyStudySession(userId: string) {
       data: {
         userId,
         sessionType: StudySessionType.DAILY,
-        sectionId: settings.currentSectionId,
+        sectionId: newCharacters[0]?.sectionId ?? settings.currentSectionId,
         totalCards: newCharacters.length,
         reviewCount: 0,
         newCount: newCharacters.length,
@@ -159,12 +162,18 @@ export async function createLearnMoreSession(
   await assertSectionUnlocked(userId, sectionId);
 
   const session = await prisma.$transaction(async (tx) => {
-    const newCharacters = await findAvailableNewCharacters(tx, {
-      userId,
-      sectionId,
-      isPro: user.isPro,
-      take: count,
-    });
+    const newCharacters = parsed.sectionId
+      ? await findAvailableNewCharacters(tx, {
+          userId,
+          sectionId,
+          isPro: user.isPro,
+          take: count,
+        })
+      : await findAvailableNewCharactersForCurrentLevel(tx, {
+          userId,
+          isPro: user.isPro,
+          take: count,
+        });
 
     if (!user.isPro && newCharacters.length === 0) {
       return null;
@@ -174,7 +183,7 @@ export async function createLearnMoreSession(
       data: {
         userId,
         sessionType: StudySessionType.LEARN_MORE,
-        sectionId,
+        sectionId: newCharacters[0]?.sectionId ?? sectionId,
         totalCards: newCharacters.length,
         newCount: newCharacters.length,
         reviewCount: 0,
@@ -769,6 +778,10 @@ export async function completeStudySession(userId: string, sessionId: string) {
       card.statusAfter === CharacterStatus.MASTERED &&
       card.statusBefore !== CharacterStatus.MASTERED,
   ).length;
+  const newlyCompletedLevelIndexes = await getNewlyCompletedLevelIndexes(
+    userId,
+    newCards.map((card) => card.characterId),
+  );
 
   await prisma.studySession.update({
     where: { id: session.id },
@@ -799,6 +812,8 @@ export async function completeStudySession(userId: string, sessionId: string) {
     uniqueCardsCountedToday: dailyCompletions.length,
     newSealsCollected: newSeals.length,
     newMasteredCharacters,
+    newlyCompletedLevelIndexes,
+    levelCompleted: newlyCompletedLevelIndexes.length > 0,
     masteredToday,
     stillDueCount,
     newSeals,
