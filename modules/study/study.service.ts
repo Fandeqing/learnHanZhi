@@ -486,14 +486,6 @@ export async function submitReviewRating(
       throw new ApiError(404, "SESSION_CARD_NOT_FOUND", "Study session card not found.");
     }
 
-    if (card.rating && card.reviewedAt) {
-      throw new ApiError(
-        409,
-        "CARD_ALREADY_REVIEWED",
-        "This card has already been reviewed.",
-      );
-    }
-
     const session = await tx.studySession.findFirst({
       where: {
         id: sessionId,
@@ -559,21 +551,14 @@ export async function submitReviewRating(
     if (isPractice) {
       const updatedCard = await tx.studySessionCard.update({
         where: { id: card.id },
-        data: completed
-          ? {
-              rating,
-              reviewedAt: now,
-              revealed: true,
-              statusBefore: card.statusBefore ?? progress.status,
-              statusAfter: progress.status,
-              becameSeal: false,
-            }
-          : {
-              revealed: true,
-              statusBefore: card.statusBefore ?? progress.status,
-              statusAfter: progress.status,
-              becameSeal: false,
-            },
+        data: {
+          rating,
+          reviewedAt: now,
+          revealed: true,
+          statusBefore: card.statusBefore ?? progress.status,
+          statusAfter: progress.status,
+          becameSeal: false,
+        },
       });
 
       return {
@@ -608,21 +593,14 @@ export async function submitReviewRating(
 
     const updatedCard = await tx.studySessionCard.update({
       where: { id: card.id },
-      data: completed
-        ? {
-            rating,
-            reviewedAt: now,
-            revealed: true,
-            statusBefore: card.statusBefore ?? progress.status,
-            statusAfter: updatedProgress.status,
-            becameSeal,
-          }
-        : {
-            revealed: true,
-            statusBefore: card.statusBefore ?? progress.status,
-            statusAfter: updatedProgress.status,
-            becameSeal,
-          },
+      data: {
+        rating,
+        reviewedAt: now,
+        revealed: true,
+        statusBefore: card.statusBefore ?? progress.status,
+        statusAfter: updatedProgress.status,
+        becameSeal,
+      },
     });
 
     const existingCompletion = await tx.dailyCharacterCompletion.findUnique({

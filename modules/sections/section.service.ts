@@ -1,4 +1,4 @@
-import { CharacterStatus, Prisma, type Section } from "@prisma/client";
+import { Prisma, StudyCardType, type Section } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 
@@ -64,22 +64,7 @@ export async function getSectionsForUser(userId: string) {
     },
   });
 
-  const learnedCounts = await prisma.userCharacterProgress.groupBy({
-    by: ["sectionId"],
-    where: {
-      userId,
-      status: {
-        in: [CharacterStatus.LEARNED, CharacterStatus.MASTERED],
-      },
-    },
-    _count: {
-      _all: true,
-    },
-  });
-
-  const learnedBySectionId = new Map(
-    learnedCounts.map((count) => [count.sectionId, count._count._all]),
-  );
+  const learnedBySectionId = await getCompletedNewCountsBySection(userId, prisma);
   const permanentUnlocks = await prisma.userSectionUnlock.findMany({
     where: { userId },
     select: { sectionId: true },
@@ -116,6 +101,30 @@ export async function getSectionsForUser(userId: string) {
   });
 }
 
+type SectionUnlockClient = Prisma.TransactionClient | typeof prisma;
+
+async function getCompletedNewCountsBySection(
+  userId: string,
+  client: SectionUnlockClient,
+) {
+  const completions = await client.dailyCharacterCompletion.findMany({
+    where: {
+      userId,
+      cardType: StudyCardType.NEW,
+    },
+    distinct: ["characterId"],
+    select: {
+      characterId: true,
+      sectionId: true,
+    },
+  });
+
+  return completions.reduce((counts, completion) => {
+    counts.set(completion.sectionId, (counts.get(completion.sectionId) ?? 0) + 1);
+    return counts;
+  }, new Map<string, number>());
+}
+
 export async function refreshUserSectionUnlocks(
   userId: string,
   client: Prisma.TransactionClient | typeof prisma = prisma,
@@ -143,21 +152,7 @@ export async function refreshUserSectionUnlocks(
     },
   });
 
-  const learnedCounts = await client.userCharacterProgress.groupBy({
-    by: ["sectionId"],
-    where: {
-      userId,
-      status: {
-        in: [CharacterStatus.LEARNED, CharacterStatus.MASTERED],
-      },
-    },
-    _count: {
-      _all: true,
-    },
-  });
-  const learnedBySectionId = new Map(
-    learnedCounts.map((count) => [count.sectionId, count._count._all]),
-  );
+  const learnedBySectionId = await getCompletedNewCountsBySection(userId, client);
 
   for (let index = 1; index < sections.length; index += 1) {
     const previousSection = sections[index - 1];

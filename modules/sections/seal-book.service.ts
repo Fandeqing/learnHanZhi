@@ -1,4 +1,3 @@
-import { CharacterStatus } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { assertSectionUnlocked } from "@/modules/sections/section.service";
@@ -30,14 +29,9 @@ export async function getSealBook(userId: string, sectionId: string) {
 
   return characters.map((character) => {
     const status = publicStatus(character.userProgress[0]?.status);
-    const shouldShowHanzi =
-      status === CharacterStatus.LEARNING ||
-      status === CharacterStatus.LEARNED ||
-      status === CharacterStatus.MASTERED;
-
     return {
       characterId: character.id,
-      hanzi: shouldShowHanzi ? character.hanzi : null,
+      hanzi: character.hanzi,
       status,
       orderIndex: character.orderIndex,
     };
