@@ -4,6 +4,8 @@ export async function clearUserData() {
   return prisma.$transaction(async (tx) => {
     const countsBefore = {
       purchases: await tx.purchase.count(),
+      dailyCharacterCompletions: await tx.dailyCharacterCompletion.count(),
+      userSectionUnlocks: await tx.userSectionUnlock.count(),
       studySessionCards: await tx.studySessionCard.count(),
       studySessions: await tx.studySession.count(),
       userCharacterProgress: await tx.userCharacterProgress.count(),
@@ -14,6 +16,8 @@ export async function clearUserData() {
     };
 
     const deletedPurchases = await tx.purchase.deleteMany();
+    const deletedDailyCompletions = await tx.dailyCharacterCompletion.deleteMany();
+    const deletedSectionUnlocks = await tx.userSectionUnlock.deleteMany();
     const deletedStudySessionCards = await tx.studySessionCard.deleteMany();
     const deletedStudySessions = await tx.studySession.deleteMany();
     const deletedProgress = await tx.userCharacterProgress.deleteMany();
@@ -23,6 +27,8 @@ export async function clearUserData() {
     return {
       deleted: {
         purchases: deletedPurchases.count,
+        dailyCharacterCompletions: deletedDailyCompletions.count,
+        userSectionUnlocks: deletedSectionUnlocks.count,
         studySessionCards: deletedStudySessionCards.count,
         studySessions: deletedStudySessions.count,
         userCharacterProgress: deletedProgress.count,

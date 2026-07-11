@@ -12,7 +12,14 @@ export const iosPurchaseVerifySchema = z.object({
     .min(1, "originalTransactionId is required."),
 });
 
-export async function verifyIosPurchasePlaceholder(
+export const iosPurchaseRestoreSchema = z.object({
+  originalTransactionId: z
+    .string()
+    .trim()
+    .min(1, "originalTransactionId is required."),
+});
+
+export async function verifyIosPurchase(
   userId: string,
   input: z.infer<typeof iosPurchaseVerifySchema>,
 ) {
@@ -22,6 +29,57 @@ export async function verifyIosPurchasePlaceholder(
     throw new ApiError(400, "UNSUPPORTED_PRODUCT", "Unsupported productId.");
   }
 
+  if (!isAppleServerApiConfigured()) {
+    throw new ApiError(
+      501,
+      "APPLE_IAP_VERIFICATION_NOT_CONFIGURED",
+      "Apple App Store Server API verification is not configured. Purchase was not applied.",
+    );
+  }
+
+  void userId;
+  throw new ApiError(
+    501,
+    "APPLE_IAP_VERIFICATION_NOT_IMPLEMENTED",
+    "Apple App Store Server API verification is not implemented yet.",
+  );
+}
+
+export async function restoreIosPurchase(
+  userId: string,
+  input: z.infer<typeof iosPurchaseRestoreSchema>,
+) {
+  iosPurchaseRestoreSchema.parse(input);
+
+  if (!isAppleServerApiConfigured()) {
+    throw new ApiError(
+      501,
+      "APPLE_IAP_VERIFICATION_NOT_CONFIGURED",
+      "Apple restore purchase verification is not configured. Entitlement was not changed.",
+    );
+  }
+
+  void userId;
+  throw new ApiError(
+    501,
+    "APPLE_RESTORE_NOT_IMPLEMENTED",
+    "Apple restore purchase verification is not implemented yet.",
+  );
+}
+
+function isAppleServerApiConfigured() {
+  return Boolean(
+    process.env.APPLE_BUNDLE_ID &&
+      process.env.APPLE_ISSUER_ID &&
+      process.env.APPLE_KEY_ID &&
+      process.env.APPLE_PRIVATE_KEY,
+  );
+}
+
+export async function applyVerifiedLifetimeProPurchase(
+  userId: string,
+  data: z.infer<typeof iosPurchaseVerifySchema>,
+) {
   const existingPurchase = await prisma.purchase.findUnique({
     where: { transactionId: data.transactionId },
   });
@@ -30,7 +88,6 @@ export async function verifyIosPurchasePlaceholder(
     throw new ApiError(409, "DUPLICATE_TRANSACTION", "transactionId already exists.");
   }
 
-  // TODO: Before production, verify transaction data with Apple's App Store Server API.
   return prisma.$transaction(async (tx) => {
     const now = new Date();
     const purchase = await tx.purchase.create({

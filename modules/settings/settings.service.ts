@@ -35,14 +35,21 @@ export async function getSettings(userId: string) {
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { isPro: true },
+      select: {
+        isPro: true,
+        onboardingCompleted: true,
+        onboardingCompletedAt: true,
+        lastStudyDate: true,
+        currentStreak: true,
+        longestStreak: true,
+      },
     }),
     ensureUserSettings(userId),
   ]);
 
   return {
     ...settings,
-    isPro: user.isPro,
+    ...user,
   };
 }
 

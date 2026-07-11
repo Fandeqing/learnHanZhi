@@ -1,4 +1,4 @@
-import { CharacterStatus, type Section } from "@prisma/client";
+import { CharacterStatus, Prisma, type Section } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 
@@ -51,6 +51,7 @@ export async function getBasicsSection() {
 
 export async function getSectionsForUser(userId: string) {
   await ensureDefaultSections();
+  await refreshUserSectionUnlocks(userId);
 
   const sections = await prisma.section.findMany({
     orderBy: { orderIndex: "asc" },
@@ -79,6 +80,13 @@ export async function getSectionsForUser(userId: string) {
   const learnedBySectionId = new Map(
     learnedCounts.map((count) => [count.sectionId, count._count._all]),
   );
+  const permanentUnlocks = await prisma.userSectionUnlock.findMany({
+    where: { userId },
+    select: { sectionId: true },
+  });
+  const unlockedSectionIds = new Set(
+    permanentUnlocks.map((unlock) => unlock.sectionId),
+  );
 
   return sections.map((section, index) => {
     const previousSection = sections[index - 1];
@@ -86,8 +94,10 @@ export async function getSectionsForUser(userId: string) {
       ? learnedBySectionId.get(previousSection.id) ?? 0
       : 0;
     const requiredLearnedCount = previousSection?.unlockLearnedRequired ?? 0;
-    const isUnlocked =
+    const liveThresholdUnlocked =
       index === 0 || previousLearnedCount >= requiredLearnedCount;
+    const isUnlocked =
+      liveThresholdUnlocked || unlockedSectionIds.has(section.id);
 
     return {
       id: section.id,
@@ -104,6 +114,74 @@ export async function getSectionsForUser(userId: string) {
         : Math.max(requiredLearnedCount - previousLearnedCount, 0),
     };
   });
+}
+
+export async function refreshUserSectionUnlocks(
+  userId: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
+  const sections = await client.section.findMany({
+    orderBy: { orderIndex: "asc" },
+  });
+
+  if (sections.length === 0) {
+    return;
+  }
+
+  await client.userSectionUnlock.upsert({
+    where: {
+      userId_sectionId: {
+        userId,
+        sectionId: sections[0].id,
+      },
+    },
+    update: {},
+    create: {
+      userId,
+      sectionId: sections[0].id,
+      learnedCountAtUnlock: 0,
+    },
+  });
+
+  const learnedCounts = await client.userCharacterProgress.groupBy({
+    by: ["sectionId"],
+    where: {
+      userId,
+      status: {
+        in: [CharacterStatus.LEARNED, CharacterStatus.MASTERED],
+      },
+    },
+    _count: {
+      _all: true,
+    },
+  });
+  const learnedBySectionId = new Map(
+    learnedCounts.map((count) => [count.sectionId, count._count._all]),
+  );
+
+  for (let index = 1; index < sections.length; index += 1) {
+    const previousSection = sections[index - 1];
+    const section = sections[index];
+    const previousLearnedCount = learnedBySectionId.get(previousSection.id) ?? 0;
+
+    if (previousLearnedCount >= previousSection.unlockLearnedRequired) {
+      await client.userSectionUnlock.upsert({
+        where: {
+          userId_sectionId: {
+            userId,
+            sectionId: section.id,
+          },
+        },
+        update: {},
+        create: {
+          userId,
+          sectionId: section.id,
+          unlockedBySectionId: previousSection.id,
+          learnedCountAtUnlock: previousLearnedCount,
+        },
+      });
+    }
+  }
 }
 
 export async function assertSectionUnlocked(userId: string, sectionId: string) {

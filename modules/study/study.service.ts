@@ -9,9 +9,17 @@ import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
-import { assertSectionUnlocked } from "@/modules/sections/section.service";
+import {
+  assertSectionUnlocked,
+  refreshUserSectionUnlocks,
+} from "@/modules/sections/section.service";
 import { serializeStudySession } from "@/modules/shared/serializers";
 import { calculateSrsUpdate } from "@/modules/study/srs";
+import {
+  isPreviousStudyDate,
+  isSameStudyDate,
+  toStudyDate,
+} from "@/modules/shared/dates";
 
 const reviewStatuses = [
   CharacterStatus.LEARNING,
@@ -35,6 +43,10 @@ export const learnMoreSchema = z.object({
 
 export const reviewRatingSchema = z.object({
   rating: z.nativeEnum(ReviewRating),
+});
+
+export const manualReviewSchema = z.object({
+  characterId: z.string().uuid(),
 });
 
 export async function createDailyStudySession(userId: string) {
@@ -297,6 +309,7 @@ export async function submitReviewRating(
 ) {
   const { rating } = reviewRatingSchema.parse(input);
   const now = new Date();
+  const studyDate = toStudyDate(now);
 
   const result = await prisma.$transaction(async (tx) => {
     const card = await tx.studySessionCard.findUnique({
@@ -391,10 +404,50 @@ export async function submitReviewRating(
       },
     });
 
+    const existingCompletion = await tx.dailyCharacterCompletion.findUnique({
+      where: {
+        userId_characterId_studyDate: {
+          userId,
+          characterId,
+          studyDate,
+        },
+      },
+    });
+
+    const todayCompletionCountBefore = await tx.dailyCharacterCompletion.count({
+      where: {
+        userId,
+        studyDate,
+      },
+    });
+
+    let createdDailyCompletion = false;
+    if (!existingCompletion) {
+      await tx.dailyCharacterCompletion.create({
+        data: {
+          userId,
+          characterId,
+          sectionId: character.sectionId,
+          sessionId,
+          cardType: card.cardType,
+          rating,
+          studyDate,
+        },
+      });
+      createdDailyCompletion = true;
+    }
+
+    if (createdDailyCompletion && todayCompletionCountBefore === 0) {
+      await updateUserStreak(tx, userId, studyDate);
+    }
+
+    await refreshUserSectionUnlocks(userId, tx);
+
     return {
       card: updatedCard,
       progress: updatedProgress,
       becameSeal,
+      createdDailyCompletion,
     };
   });
 
@@ -411,7 +464,41 @@ export async function submitReviewRating(
       isMastered: result.progress.isMastered,
     },
     becameSeal: result.becameSeal,
+    countedForToday: result.createdDailyCompletion,
   };
+}
+
+async function updateUserStreak(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  studyDate: Date,
+) {
+  const user = await tx.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: {
+      lastStudyDate: true,
+      currentStreak: true,
+      longestStreak: true,
+    },
+  });
+
+  if (user.lastStudyDate && isSameStudyDate(user.lastStudyDate, studyDate)) {
+    return;
+  }
+
+  const currentStreak =
+    user.lastStudyDate && isPreviousStudyDate(user.lastStudyDate, studyDate)
+      ? user.currentStreak + 1
+      : 1;
+
+  await tx.user.update({
+    where: { id: userId },
+    data: {
+      lastStudyDate: studyDate,
+      currentStreak,
+      longestStreak: Math.max(currentStreak, user.longestStreak),
+    },
+  });
 }
 
 export async function completeStudySession(userId: string, sessionId: string) {
@@ -435,10 +522,20 @@ export async function completeStudySession(userId: string, sessionId: string) {
     throw new ApiError(400, "UNFINISHED_CARDS", "All cards must be reviewed first.");
   }
 
+  const studyDate = toStudyDate(new Date());
   const reviewedCards = session.cards.filter((card) => card.reviewedAt);
-  const newCards = reviewedCards.filter((card) => card.cardType === StudyCardType.NEW);
-  const reviewCards = reviewedCards.filter(
-    (card) => card.cardType === StudyCardType.REVIEW,
+  const dailyCompletions = await prisma.dailyCharacterCompletion.findMany({
+    where: {
+      userId,
+      sessionId,
+      studyDate,
+    },
+  });
+  const newCards = dailyCompletions.filter(
+    (completion) => completion.cardType === StudyCardType.NEW,
+  );
+  const reviewCards = dailyCompletions.filter(
+    (completion) => completion.cardType === StudyCardType.REVIEW,
   );
   const newSeals = reviewedCards
     .filter((card) => card.becameSeal)
@@ -460,7 +557,75 @@ export async function completeStudySession(userId: string, sessionId: string) {
     sessionId: session.id,
     newCharactersLearned: newCards.length,
     reviewsCompleted: reviewCards.length,
+    uniqueCardsCountedToday: dailyCompletions.length,
     newSealsCollected: newSeals.length,
     newSeals,
   };
+}
+
+export async function createManualReviewSession(userId: string, characterId: string) {
+  const [user, character, progress] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+    prisma.character.findUnique({ where: { id: characterId } }),
+    prisma.userCharacterProgress.findUnique({
+      where: {
+        userId_characterId: {
+          userId,
+          characterId,
+        },
+      },
+    }),
+  ]);
+
+  if (!character) {
+    throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
+  }
+
+  if (!user.isPro && !character.isFree) {
+    throw new ApiError(
+      403,
+      "PAYWALL_REQUIRED",
+      "Unlock Pro to continue learning all characters.",
+      { paywallRequired: true },
+    );
+  }
+
+  if (!progress || progress.status === CharacterStatus.NEW) {
+    throw new ApiError(
+      403,
+      "CHARACTER_DETAIL_LOCKED",
+      "Learn this character before manually reviewing it.",
+    );
+  }
+
+  const session = await prisma.$transaction(async (tx) => {
+    const createdSession = await tx.studySession.create({
+      data: {
+        userId,
+        sessionType: StudySessionType.MANUAL_REVIEW,
+        sectionId: character.sectionId,
+        totalCards: 1,
+        reviewCount: 1,
+        newCount: 0,
+        completedCount: 0,
+        startedAt: new Date(),
+      },
+    });
+
+    await tx.studySessionCard.create({
+      data: {
+        sessionId: createdSession.id,
+        userId,
+        characterId,
+        cardType: StudyCardType.REVIEW,
+      },
+    });
+
+    return tx.studySession.findUniqueOrThrow({
+      where: { id: createdSession.id },
+      include: sessionInclude,
+    });
+  });
+
+  return serializeStudySession(session);
 }

@@ -1,20 +1,15 @@
 import { requireUser } from "@/lib/auth";
 import { handleRouteError, ok } from "@/lib/api-response";
 import {
-  iosPurchaseVerifySchema,
-  verifyIosPurchase,
-} from "@/modules/purchases/purchase.service";
+  completeOnboarding,
+  completeOnboardingSchema,
+} from "@/modules/users/user.service";
 
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
-    const body = await request.json();
-    return ok(
-      await verifyIosPurchase(
-        user.id,
-        iosPurchaseVerifySchema.parse(body),
-      ),
-    );
+    const body = await request.json().catch(() => ({}));
+    return ok(await completeOnboarding(user.id, completeOnboardingSchema.parse(body)));
   } catch (error) {
     return handleRouteError(error);
   }
