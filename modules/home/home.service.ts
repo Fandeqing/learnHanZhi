@@ -12,7 +12,7 @@ import {
   getSectionsForUser,
 } from "@/modules/sections/section.service";
 import { publicStatus } from "@/modules/shared/serializers";
-import { toStudyDate } from "@/modules/shared/dates";
+import { getStudyDateUtcBounds, toStudyDate } from "@/modules/shared/dates";
 
 const activeReviewStatuses = [
   CharacterStatus.LEARNING,
@@ -23,6 +23,7 @@ const activeReviewStatuses = [
 export async function getHome(userId: string) {
   const now = new Date();
   const studyDate = toStudyDate(now);
+  const studyDateBounds = getStudyDateUtcBounds(studyDate);
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
@@ -105,8 +106,8 @@ export async function getHome(userId: string) {
         userId,
         sessionType: StudySessionType.DAILY,
         startedAt: {
-          gte: studyDate,
-          lt: toStudyDate(new Date(studyDate.getTime() + 24 * 60 * 60 * 1000)),
+          gte: studyDateBounds.start,
+          lt: studyDateBounds.end,
         },
       },
       orderBy: { startedAt: "desc" },

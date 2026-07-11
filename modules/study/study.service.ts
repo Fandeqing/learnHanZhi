@@ -33,8 +33,6 @@ const reviewStatuses = [
 
 const practiceSessionTypes = new Set<StudySessionType>([
   StudySessionType.PRACTICE_AGAIN,
-  StudySessionType.REVIEW_AGAIN,
-  StudySessionType.MANUAL_REVIEW,
 ]);
 
 const sessionInclude = {
@@ -49,6 +47,7 @@ const sessionInclude = {
 export const learnMoreSchema = z.object({
   count: z.number().int().positive().max(50).default(5).optional(),
   sectionId: z.string().uuid().optional(),
+  characterId: z.string().uuid().optional(),
 });
 
 export const reviewRatingSchema = z.object({
@@ -153,7 +152,66 @@ export async function createLearnMoreSession(
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
   ]);
-  const sectionId = parsed.sectionId ?? settings.currentSectionId;
+  const targetCharacterWithProgress = parsed.characterId
+    ? await prisma.character.findUnique({
+        where: { id: parsed.characterId },
+        include: {
+          userProgress: {
+            where: { userId },
+            take: 1,
+          },
+        },
+      })
+    : null;
+
+  if (parsed.characterId && !targetCharacterWithProgress) {
+    throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
+  }
+
+  if (
+    targetCharacterWithProgress &&
+    parsed.sectionId &&
+    targetCharacterWithProgress.sectionId !== parsed.sectionId
+  ) {
+    throw new ApiError(
+      400,
+      "CHARACTER_SECTION_MISMATCH",
+      "Character does not belong to the requested section.",
+    );
+  }
+
+  if (targetCharacterWithProgress && !user.isPro && !targetCharacterWithProgress.isFree) {
+    return {
+      paywallRequired: true,
+      message: "Unlock Pro to continue learning all characters.",
+    };
+  }
+
+  const targetProgress = targetCharacterWithProgress?.userProgress[0];
+  if (
+    targetCharacterWithProgress &&
+    targetProgress &&
+    targetProgress.status !== CharacterStatus.NEW
+  ) {
+    throw new ApiError(409, "CHARACTER_ALREADY_LEARNED", "Character is already learned.");
+  }
+
+  const targetCharacter = targetCharacterWithProgress
+    ? {
+        id: targetCharacterWithProgress.id,
+        hanzi: targetCharacterWithProgress.hanzi,
+        pinyin: targetCharacterWithProgress.pinyin,
+        meaning: targetCharacterWithProgress.meaning,
+        example: targetCharacterWithProgress.example,
+        sectionId: targetCharacterWithProgress.sectionId,
+        orderIndex: targetCharacterWithProgress.orderIndex,
+        isFree: targetCharacterWithProgress.isFree,
+        createdAt: targetCharacterWithProgress.createdAt,
+        updatedAt: targetCharacterWithProgress.updatedAt,
+      }
+    : null;
+
+  const sectionId = targetCharacter?.sectionId ?? parsed.sectionId ?? settings.currentSectionId;
 
   if (!sectionId) {
     throw new ApiError(400, "SECTION_REQUIRED", "sectionId is required.");
@@ -162,18 +220,20 @@ export async function createLearnMoreSession(
   await assertSectionUnlocked(userId, sectionId);
 
   const session = await prisma.$transaction(async (tx) => {
-    const newCharacters = parsed.sectionId
-      ? await findAvailableNewCharacters(tx, {
-          userId,
-          sectionId,
-          isPro: user.isPro,
-          take: count,
-        })
-      : await findAvailableNewCharactersForCurrentLevel(tx, {
-          userId,
-          isPro: user.isPro,
-          take: count,
-        });
+    const newCharacters = targetCharacter
+      ? [targetCharacter]
+      : parsed.sectionId
+        ? await findAvailableNewCharacters(tx, {
+            userId,
+            sectionId,
+            isPro: user.isPro,
+            take: count,
+          })
+        : await findAvailableNewCharactersForCurrentLevel(tx, {
+            userId,
+            isPro: user.isPro,
+            take: count,
+          });
 
     if (!user.isPro && newCharacters.length === 0) {
       return null;

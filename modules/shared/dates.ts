@@ -1,11 +1,26 @@
 export function addDays(date: Date, days: number) {
   const next = new Date(date);
-  next.setDate(next.getDate() + days);
+  next.setUTCDate(next.getUTCDate() + days);
   return next;
 }
 
 export function toStudyDate(date: Date) {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const shanghaiOffsetMs = 8 * 60 * 60 * 1000;
+  const shanghaiDate = new Date(date.getTime() + shanghaiOffsetMs);
+  return new Date(
+    Date.UTC(
+      shanghaiDate.getUTCFullYear(),
+      shanghaiDate.getUTCMonth(),
+      shanghaiDate.getUTCDate(),
+    ),
+  );
+}
+
+export function getStudyDateUtcBounds(studyDate: Date) {
+  const shanghaiOffsetMs = 8 * 60 * 60 * 1000;
+  const start = new Date(studyDate.getTime() - shanghaiOffsetMs);
+  const end = addDays(start, 1);
+  return { start, end };
 }
 
 export function isPreviousStudyDate(previous: Date, current: Date) {
