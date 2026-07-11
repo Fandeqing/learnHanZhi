@@ -16,6 +16,8 @@ enum CharacterStatus {
 
 enum StudySessionType {
   DAILY
+  DUE_REVIEW
+  PRACTICE_AGAIN
   REVIEW_AGAIN
   LEARN_MORE
   MANUAL_REVIEW

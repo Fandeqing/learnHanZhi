@@ -49,6 +49,10 @@ export const manualReviewSchema = z.object({
   characterId: z.string().uuid(),
 });
 
+export const practiceAgainSchema = z.object({
+  count: z.number().int().positive().max(50).default(10).optional(),
+});
+
 export async function createDailyStudySession(userId: string) {
   const now = new Date();
   const [user, settings] = await Promise.all([
@@ -63,35 +67,14 @@ export async function createDailyStudySession(userId: string) {
   await assertSectionUnlocked(userId, settings.currentSectionId);
 
   const session = await prisma.$transaction(async (tx) => {
-    const reviewProgress = await tx.userCharacterProgress.findMany({
-      where: {
-        userId,
-        status: { in: reviewStatuses },
-        nextReviewAt: { lte: now },
-        character: user.isPro ? undefined : { isFree: true },
-      },
-      orderBy: { nextReviewAt: "asc" },
-      include: { character: true },
-    });
-
-    const newCharacters = await tx.character.findMany({
-      where: {
-        sectionId: settings.currentSectionId!,
-        ...(user.isPro ? {} : { isFree: true }),
-        OR: [
-          { userProgress: { none: { userId } } },
-          {
-            userProgress: {
-              some: { userId, status: CharacterStatus.NEW },
-            },
-          },
-        ],
-      },
-      orderBy: { orderIndex: "asc" },
+    const newCharacters = await findAvailableNewCharacters(tx, {
+      userId,
+      sectionId: settings.currentSectionId!,
+      isPro: user.isPro,
       take: settings.dailyNewCharacterGoal,
     });
 
-    if (!user.isPro && reviewProgress.length + newCharacters.length === 0) {
+    if (!user.isPro && newCharacters.length === 0) {
       return null;
     }
 
@@ -100,8 +83,8 @@ export async function createDailyStudySession(userId: string) {
         userId,
         sessionType: StudySessionType.DAILY,
         sectionId: settings.currentSectionId,
-        totalCards: reviewProgress.length + newCharacters.length,
-        reviewCount: reviewProgress.length,
+        totalCards: newCharacters.length,
+        reviewCount: 0,
         newCount: newCharacters.length,
         completedCount: 0,
         startedAt: now,
@@ -127,20 +110,12 @@ export async function createDailyStudySession(userId: string) {
     }
 
     await tx.studySessionCard.createMany({
-      data: [
-        ...reviewProgress.map((progress) => ({
-          sessionId: createdSession.id,
-          userId,
-          characterId: progress.characterId,
-          cardType: StudyCardType.REVIEW,
-        })),
-        ...newCharacters.map((character) => ({
-          sessionId: createdSession.id,
-          userId,
-          characterId: character.id,
-          cardType: StudyCardType.NEW,
-        })),
-      ],
+      data: newCharacters.map((character) => ({
+        sessionId: createdSession.id,
+        userId,
+        characterId: character.id,
+        cardType: StudyCardType.NEW,
+      })),
     });
 
     return tx.studySession.findUniqueOrThrow({
@@ -178,20 +153,10 @@ export async function createLearnMoreSession(
   await assertSectionUnlocked(userId, sectionId);
 
   const session = await prisma.$transaction(async (tx) => {
-    const newCharacters = await tx.character.findMany({
-      where: {
-        sectionId,
-        ...(user.isPro ? {} : { isFree: true }),
-        OR: [
-          { userProgress: { none: { userId } } },
-          {
-            userProgress: {
-              some: { userId, status: CharacterStatus.NEW },
-            },
-          },
-        ],
-      },
-      orderBy: { orderIndex: "asc" },
+    const newCharacters = await findAvailableNewCharacters(tx, {
+      userId,
+      sectionId,
+      isPro: user.isPro,
       take: count,
     });
 
@@ -255,6 +220,88 @@ export async function createLearnMoreSession(
   return serializeStudySession(session);
 }
 
+export async function createDueReviewSession(userId: string) {
+  const [user] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+    ensureUserSettings(userId),
+  ]);
+
+  const session = await prisma.$transaction(async (tx) => {
+    const reviewProgress = await findDueReviewProgress(tx, {
+      userId,
+      isPro: user.isPro,
+      now: new Date(),
+    });
+
+    const createdSession = await createReviewOnlySession(tx, {
+      userId,
+      sessionType: StudySessionType.DUE_REVIEW,
+      sectionId: null,
+      characterIds: reviewProgress.map((progress) => progress.characterId),
+    });
+
+    return tx.studySession.findUniqueOrThrow({
+      where: { id: createdSession.id },
+      include: sessionInclude,
+    });
+  });
+
+  return serializeStudySession(session);
+}
+
+export async function createPracticeAgainSession(
+  userId: string,
+  input: z.infer<typeof practiceAgainSchema> = {},
+) {
+  const { count = 10 } = practiceAgainSchema.parse(input);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  const studyDate = toStudyDate(new Date());
+
+  const session = await prisma.$transaction(async (tx) => {
+    const todayCompletions = await tx.dailyCharacterCompletion.findMany({
+      where: {
+        userId,
+        studyDate,
+        character: user.isPro ? undefined : { isFree: true },
+      },
+      orderBy: { createdAt: "desc" },
+      include: { character: true },
+      take: count,
+    });
+
+    const characterIds = todayCompletions.map((completion) => completion.characterId);
+
+    if (characterIds.length < count) {
+      const recentProgress = await tx.userCharacterProgress.findMany({
+        where: {
+          userId,
+          status: { in: reviewStatuses },
+          characterId: { notIn: characterIds },
+          character: user.isPro ? undefined : { isFree: true },
+        },
+        orderBy: [{ lastReviewedAt: "desc" }, { updatedAt: "desc" }],
+        take: count - characterIds.length,
+      });
+
+      characterIds.push(...recentProgress.map((progress) => progress.characterId));
+    }
+
+    const createdSession = await createReviewOnlySession(tx, {
+      userId,
+      sessionType: StudySessionType.PRACTICE_AGAIN,
+      sectionId: null,
+      characterIds,
+    });
+
+    return tx.studySession.findUniqueOrThrow({
+      where: { id: createdSession.id },
+      include: sessionInclude,
+    });
+  });
+
+  return serializeStudySession(session);
+}
+
 export async function createReviewAgainSession(userId: string, sessionId: string) {
   const previousSession = await prisma.studySession.findFirst({
     where: { id: sessionId, userId },
@@ -299,6 +346,90 @@ export async function createReviewAgainSession(userId: string, sessionId: string
   });
 
   return serializeStudySession(session);
+}
+
+async function findAvailableNewCharacters(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    sectionId: string;
+    isPro: boolean;
+    take: number;
+  },
+) {
+  return tx.character.findMany({
+    where: {
+      sectionId: input.sectionId,
+      ...(input.isPro ? {} : { isFree: true }),
+      OR: [
+        { userProgress: { none: { userId: input.userId } } },
+        {
+          userProgress: {
+            some: { userId: input.userId, status: CharacterStatus.NEW },
+          },
+        },
+      ],
+    },
+    orderBy: { orderIndex: "asc" },
+    take: input.take,
+  });
+}
+
+async function findDueReviewProgress(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    isPro: boolean;
+    now: Date;
+  },
+) {
+  return tx.userCharacterProgress.findMany({
+    where: {
+      userId: input.userId,
+      status: { in: reviewStatuses },
+      nextReviewAt: { lte: input.now },
+      character: input.isPro ? undefined : { isFree: true },
+    },
+    orderBy: { nextReviewAt: "asc" },
+    include: { character: true },
+  });
+}
+
+async function createReviewOnlySession(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: string;
+    sessionType: StudySessionType;
+    sectionId: string | null;
+    characterIds: string[];
+  },
+) {
+  const uniqueCharacterIds = Array.from(new Set(input.characterIds));
+  const createdSession = await tx.studySession.create({
+    data: {
+      userId: input.userId,
+      sessionType: input.sessionType,
+      sectionId: input.sectionId,
+      totalCards: uniqueCharacterIds.length,
+      reviewCount: uniqueCharacterIds.length,
+      newCount: 0,
+      completedCount: 0,
+      startedAt: new Date(),
+    },
+  });
+
+  if (uniqueCharacterIds.length > 0) {
+    await tx.studySessionCard.createMany({
+      data: uniqueCharacterIds.map((characterId) => ({
+        sessionId: createdSession.id,
+        userId: input.userId,
+        characterId,
+        cardType: StudyCardType.REVIEW,
+      })),
+    });
+  }
+
+  return createdSession;
 }
 
 export async function submitReviewRating(
@@ -531,11 +662,11 @@ export async function completeStudySession(userId: string, sessionId: string) {
       studyDate,
     },
   });
-  const newCards = dailyCompletions.filter(
-    (completion) => completion.cardType === StudyCardType.NEW,
+  const newCards = reviewedCards.filter(
+    (card) => card.cardType === StudyCardType.NEW,
   );
-  const reviewCards = dailyCompletions.filter(
-    (completion) => completion.cardType === StudyCardType.REVIEW,
+  const reviewCards = reviewedCards.filter(
+    (card) => card.cardType === StudyCardType.REVIEW,
   );
   const newSeals = reviewedCards
     .filter((card) => card.becameSeal)
@@ -544,6 +675,11 @@ export async function completeStudySession(userId: string, sessionId: string) {
       hanzi: card.character.hanzi,
       status: card.statusAfter,
     }));
+  const masteredToday = reviewedCards.filter(
+    (card) =>
+      card.statusAfter === CharacterStatus.MASTERED &&
+      card.statusBefore !== CharacterStatus.MASTERED,
+  ).length;
 
   await prisma.studySession.update({
     where: { id: session.id },
@@ -555,10 +691,12 @@ export async function completeStudySession(userId: string, sessionId: string) {
 
   return {
     sessionId: session.id,
+    sessionType: session.sessionType,
     newCharactersLearned: newCards.length,
     reviewsCompleted: reviewCards.length,
     uniqueCardsCountedToday: dailyCompletions.length,
     newSealsCollected: newSeals.length,
+    masteredToday,
     newSeals,
   };
 }

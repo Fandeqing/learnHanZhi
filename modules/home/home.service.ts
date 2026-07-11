@@ -1,4 +1,4 @@
-import { CharacterStatus, StudySessionType } from "@prisma/client";
+import { CharacterStatus, StudyCardType, StudySessionType } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
@@ -36,16 +36,18 @@ export async function getHome(userId: string) {
 
   await assertSectionUnlocked(userId, currentSection.id);
 
-  const dueReviewCount = await prisma.userCharacterProgress.count({
+  const dueReviewProgress = await prisma.userCharacterProgress.findMany({
     where: {
       userId,
       status: { in: activeReviewStatuses },
       nextReviewAt: { lte: now },
       character: user.isPro ? undefined : { isFree: true },
     },
+    orderBy: { nextReviewAt: "asc" },
+    include: { character: true },
   });
 
-  const availableNewCount = await prisma.character.count({
+  const availableNewCharacters = await prisma.character.findMany({
     where: {
       sectionId: currentSection.id,
       ...(user.isPro ? {} : { isFree: true }),
@@ -65,18 +67,40 @@ export async function getHome(userId: string) {
         },
       ],
     },
+    orderBy: { orderIndex: "asc" },
+    take: settings.dailyNewCharacterGoal,
   });
 
-  const dailyNewCharacterCount = Math.min(
-    settings.dailyNewCharacterGoal,
-    availableNewCount,
-  );
-  const totalCards = dueReviewCount + dailyNewCharacterCount;
-  const [completedTodayCount, latestDailySession] = await Promise.all([
+  const [
+    completedTodayCount,
+    todayNewCompletions,
+    todayExtraNewCount,
+    latestDailySession,
+    masteredCount,
+    learnedCount,
+    accessibleCharacterCount,
+  ] = await Promise.all([
+    prisma.dailyCharacterCompletion.count({ where: { userId, studyDate } }),
+    prisma.dailyCharacterCompletion.findMany({
+      where: {
+        userId,
+        studyDate,
+        cardType: StudyCardType.NEW,
+        session: {
+          sessionType: StudySessionType.DAILY,
+        },
+      },
+      orderBy: { createdAt: "asc" },
+      include: { character: true },
+    }),
     prisma.dailyCharacterCompletion.count({
       where: {
         userId,
         studyDate,
+        cardType: StudyCardType.NEW,
+        session: {
+          sessionType: StudySessionType.LEARN_MORE,
+        },
       },
     }),
     prisma.studySession.findFirst({
@@ -90,17 +114,44 @@ export async function getHome(userId: string) {
       },
       orderBy: { startedAt: "desc" },
     }),
+    prisma.userCharacterProgress.count({
+      where: {
+        userId,
+        status: CharacterStatus.MASTERED,
+        character: user.isPro ? undefined : { isFree: true },
+      },
+    }),
+    prisma.userCharacterProgress.count({
+      where: {
+        userId,
+        status: { in: [CharacterStatus.LEARNED, CharacterStatus.MASTERED] },
+        character: user.isPro ? undefined : { isFree: true },
+      },
+    }),
+    prisma.character.count({
+      where: user.isPro ? undefined : { isFree: true },
+    }),
   ]);
-  const todayProgressTotal = latestDailySession?.totalCards ?? totalCards;
+
+  const todayNewLearnedCount = Math.min(
+    todayNewCompletions.length,
+    settings.dailyNewCharacterGoal,
+  );
+  const dailyNewCharacterCount = Math.min(
+    Math.max(settings.dailyNewCharacterGoal - todayNewLearnedCount, 0),
+    availableNewCharacters.length,
+  );
+  const totalCards = dueReviewProgress.length + dailyNewCharacterCount;
+  const todayProgressTotal =
+    latestDailySession?.totalCards ?? settings.dailyNewCharacterGoal;
   const isTodayComplete =
-    todayProgressTotal > 0 &&
-    (latestDailySession?.completedAt != null ||
-      completedTodayCount >= todayProgressTotal);
+    todayNewLearnedCount >= settings.dailyNewCharacterGoal ||
+    latestDailySession?.completedAt != null;
   const suggestedPrimaryAction = isTodayComplete
     ? "REVIEW_AGAIN_OR_LEARN_MORE"
-    : totalCards > 0 || todayProgressTotal > 0
+    : dailyNewCharacterCount > 0 || todayProgressTotal > 0
       ? "START_LEARNING"
-      : user.isPro
+      : user.isPro || dueReviewProgress.length === 0
         ? "DONE"
         : "PAYWALL";
   const currentSectionProgress = (await getSectionsForUser(userId)).find(
@@ -108,9 +159,35 @@ export async function getHome(userId: string) {
   );
   const nextSection = await getNextSection(userId, currentSection);
   const sealBookPreview = await getSealBookPreview(userId, currentSection.id);
+  const completedNewCharacterIds = new Set(
+    todayNewCompletions.map((completion) => completion.characterId),
+  );
+  const completedNewCharacters = todayNewCompletions.map((completion) =>
+    serializeCharacterSummary(completion.character),
+  );
+  const plannedNewCharacters = availableNewCharacters
+    .filter((character) => !completedNewCharacterIds.has(character.id))
+    .slice(0, Math.max(settings.dailyNewCharacterGoal - completedNewCharacters.length, 0))
+    .map(serializeCharacterSummary);
+  const todayNewCharacters = [
+    ...completedNewCharacters,
+    ...plannedNewCharacters,
+  ].slice(0, settings.dailyNewCharacterGoal);
 
   return {
-    dueReviewCount,
+    todayNewGoal: settings.dailyNewCharacterGoal,
+    todayNewLearnedCount,
+    todayExtraNewLearnedCount: todayExtraNewCount,
+    todayNewCharacters,
+    dueReviewCount: dueReviewProgress.length,
+    dueReviewCharacters: dueReviewProgress.map((progress) =>
+      serializeCharacterSummary(progress.character),
+    ),
+    masteredCount,
+    learnedCount,
+    toLearnCount: Math.max(accessibleCharacterCount - learnedCount, 0),
+    isDailyLearningComplete: isTodayComplete,
+    hasDueReviews: dueReviewProgress.length > 0,
     dailyNewCharacterCount,
     totalCards,
     completedTodayCount,
@@ -127,6 +204,20 @@ export async function getHome(userId: string) {
     currentStreak: user.currentStreak,
     longestStreak: user.longestStreak,
     lastStudyDate: user.lastStudyDate,
+  };
+}
+
+function serializeCharacterSummary(character: {
+  id: string;
+  hanzi: string;
+  sectionId: string;
+  orderIndex: number;
+}) {
+  return {
+    id: character.id,
+    hanzi: character.hanzi,
+    sectionId: character.sectionId,
+    orderIndex: character.orderIndex,
   };
 }
 
