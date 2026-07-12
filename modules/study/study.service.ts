@@ -64,11 +64,11 @@ export const practiceAgainSchema = z.object({
 
 export async function createDailyStudySession(userId: string) {
   const now = new Date();
-  const studyDate = toStudyDate(now);
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
   ]);
+  const studyDate = toStudyDate(now, settings.studyTimeZone);
 
   if (!settings.currentSectionId) {
     throw new ApiError(400, "CURRENT_SECTION_REQUIRED", "Current section is required.");
@@ -334,8 +334,11 @@ export async function createPracticeAgainSession(
   input: z.infer<typeof practiceAgainSchema> = {},
 ) {
   const { count = 10 } = practiceAgainSchema.parse(input);
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const studyDate = toStudyDate(new Date());
+  const [user, settings] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+    ensureUserSettings(userId),
+  ]);
+  const studyDate = toStudyDate(new Date(), settings.studyTimeZone);
 
   const session = await prisma.$transaction(async (tx) => {
     const todayCompletions = await tx.dailyCharacterCompletion.findMany({
@@ -544,7 +547,8 @@ export async function submitReviewRating(
 ) {
   const { rating } = reviewRatingSchema.parse(input);
   const now = new Date();
-  const studyDate = toStudyDate(now);
+  const settings = await ensureUserSettings(userId);
+  const studyDate = toStudyDate(now, settings.studyTimeZone);
 
   const result = await prisma.$transaction(async (tx) => {
     const card = await tx.studySessionCard.findUnique({
@@ -797,7 +801,8 @@ export async function completeStudySession(userId: string, sessionId: string) {
     throw new ApiError(400, "UNFINISHED_CARDS", "All cards must be reviewed first.");
   }
 
-  const studyDate = toStudyDate(new Date());
+  const settings = await ensureUserSettings(userId);
+  const studyDate = toStudyDate(new Date(), settings.studyTimeZone);
   const reviewedCards = session.cards.filter((card) => card.reviewedAt);
   const dailyCompletions = await prisma.dailyCharacterCompletion.findMany({
     where: {

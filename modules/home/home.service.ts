@@ -22,14 +22,14 @@ const activeReviewStatuses = [
 
 export async function getHome(userId: string) {
   const now = new Date();
-  const studyDate = toStudyDate(now);
-  const studyDateBounds = getStudyDateUtcBounds(studyDate);
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
     }),
     ensureUserSettings(userId),
   ]);
+  const studyDate = toStudyDate(now, settings.studyTimeZone);
+  const studyDateBounds = getStudyDateUtcBounds(studyDate, settings.studyTimeZone);
 
   const currentSection = settings.currentSectionId
     ? await prisma.section.findUnique({ where: { id: settings.currentSectionId } })

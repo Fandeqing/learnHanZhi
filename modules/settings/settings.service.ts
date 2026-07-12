@@ -10,6 +10,7 @@ export const settingsPatchSchema = z.object({
   dailyNewCharacterGoal: z.union([z.literal(5), z.literal(10), z.literal(15)]).optional(),
   pronunciationEnabled: z.boolean().optional(),
   autoPlayEnabled: z.boolean().optional(),
+  studyTimeZone: z.string().trim().min(1).max(80).optional(),
   currentSectionId: z.string().uuid().optional(),
 });
 
@@ -65,6 +66,14 @@ export async function updateSettings(
 
   if (data.currentSectionId) {
     await assertSectionUnlocked(userId, data.currentSectionId);
+  }
+
+  if (data.studyTimeZone) {
+    try {
+      Intl.DateTimeFormat("en-US", { timeZone: data.studyTimeZone }).format(new Date());
+    } catch {
+      throw new ApiError(400, "INVALID_TIME_ZONE", "Invalid study time zone.");
+    }
   }
 
   await ensureUserSettings(userId);

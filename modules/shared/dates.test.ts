@@ -7,17 +7,22 @@ import {
 } from "./dates";
 
 describe("study date helpers", () => {
-  it("normalizes timestamps to Asia/Shanghai study date", () => {
-    expect(toStudyDate(new Date("2026-07-11T23:59:00.000Z")).toISOString()).toBe(
+  it("normalizes timestamps with the user's study time zone", () => {
+    const timestamp = new Date("2026-07-11T23:59:00.000Z");
+
+    expect(toStudyDate(timestamp, "Asia/Shanghai").toISOString()).toBe(
       "2026-07-12T00:00:00.000Z",
+    );
+    expect(toStudyDate(timestamp, "America/Los_Angeles").toISOString()).toBe(
+      "2026-07-11T00:00:00.000Z",
     );
   });
 
-  it("detects same study date", () => {
+  it("detects same stored study date", () => {
     expect(
       isSameStudyDate(
-        new Date("2026-07-11T01:00:00.000Z"),
-        new Date("2026-07-11T15:00:00.000Z"),
+        new Date("2026-07-11T00:00:00.000Z"),
+        new Date("2026-07-11T00:00:00.000Z"),
       ),
     ).toBe(true);
   });
@@ -25,16 +30,25 @@ describe("study date helpers", () => {
   it("detects previous study date for streaks", () => {
     expect(
       isPreviousStudyDate(
-        new Date("2026-07-10T12:00:00.000Z"),
-        new Date("2026-07-11T01:00:00.000Z"),
+        new Date("2026-07-10T00:00:00.000Z"),
+        new Date("2026-07-11T00:00:00.000Z"),
       ),
     ).toBe(true);
   });
 
-  it("returns UTC bounds for an Asia/Shanghai study date", () => {
-    const bounds = getStudyDateUtcBounds(new Date("2026-07-11T00:00:00.000Z"));
+  it("returns UTC bounds for a study date in the user's time zone", () => {
+    const shanghaiBounds = getStudyDateUtcBounds(
+      new Date("2026-07-11T00:00:00.000Z"),
+      "Asia/Shanghai",
+    );
+    const losAngelesBounds = getStudyDateUtcBounds(
+      new Date("2026-07-11T00:00:00.000Z"),
+      "America/Los_Angeles",
+    );
 
-    expect(bounds.start.toISOString()).toBe("2026-07-10T16:00:00.000Z");
-    expect(bounds.end.toISOString()).toBe("2026-07-11T16:00:00.000Z");
+    expect(shanghaiBounds.start.toISOString()).toBe("2026-07-10T16:00:00.000Z");
+    expect(shanghaiBounds.end.toISOString()).toBe("2026-07-11T16:00:00.000Z");
+    expect(losAngelesBounds.start.toISOString()).toBe("2026-07-11T07:00:00.000Z");
+    expect(losAngelesBounds.end.toISOString()).toBe("2026-07-12T07:00:00.000Z");
   });
 });

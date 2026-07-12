@@ -79,6 +79,7 @@ model UserSetting {
   dailyNewCharacterGoal    Int      @default(5)
   pronunciationEnabled     Boolean  @default(true)
   autoPlayEnabled          Boolean  @default(false)
+  studyTimeZone            String   @default("UTC")
   currentSectionId         String?  @db.Uuid
   createdAt                DateTime @default(now()) @db.Timestamptz(6)
   updatedAt                DateTime @updatedAt @db.Timestamptz(6)

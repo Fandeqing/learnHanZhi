@@ -7,6 +7,7 @@ import {
 
 export const anonymousUserSchema = z.object({
   deviceId: z.string().trim().min(1, "deviceId is required."),
+  studyTimeZone: z.string().trim().min(1).max(80).optional(),
 });
 
 export const completeOnboardingSchema = z.object({
@@ -16,13 +17,27 @@ export const completeOnboardingSchema = z.object({
 });
 
 export async function createAnonymousUser(input: z.infer<typeof anonymousUserSchema>) {
-  const { deviceId } = anonymousUserSchema.parse(input);
+  const { deviceId, studyTimeZone } = anonymousUserSchema.parse(input);
   const basics = await getBasicsSection();
+  const validStudyTimeZone = normalizeStudyTimeZone(studyTimeZone);
 
   const user = await prisma.$transaction(async (tx) => {
     const upsertedUser = await tx.user.upsert({
       where: { deviceId },
-      update: {},
+      update: {
+        settings: {
+          upsert: {
+            update: { studyTimeZone: validStudyTimeZone },
+            create: {
+              dailyNewCharacterGoal: 5,
+              pronunciationEnabled: true,
+              autoPlayEnabled: false,
+              studyTimeZone: validStudyTimeZone,
+              currentSectionId: basics.id,
+            },
+          },
+        },
+      },
       create: {
         deviceId,
         settings: {
@@ -30,6 +45,7 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
             dailyNewCharacterGoal: 5,
             pronunciationEnabled: true,
             autoPlayEnabled: false,
+            studyTimeZone: validStudyTimeZone,
             currentSectionId: basics.id,
           },
         },
@@ -44,6 +60,19 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
   });
 
   return user;
+}
+
+function normalizeStudyTimeZone(timeZone?: string) {
+  if (!timeZone) {
+    return "UTC";
+  }
+
+  try {
+    Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
 }
 
 export async function completeOnboarding(
