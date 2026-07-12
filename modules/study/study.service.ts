@@ -60,6 +60,7 @@ export const manualReviewSchema = z.object({
 
 export const practiceAgainSchema = z.object({
   count: z.number().int().positive().max(50).default(10).optional(),
+  sessionId: z.string().uuid().optional(),
 });
 
 export async function createDailyStudySession(userId: string) {
@@ -307,10 +308,11 @@ export async function createDueReviewSession(userId: string) {
   ]);
 
   const session = await prisma.$transaction(async (tx) => {
-    const reviewProgress = await findDueReviewProgress(tx, {
+    const reviewProgress = await findReviewCandidates(tx, {
       userId,
       isPro: user.isPro,
       now: new Date(),
+      take: 10,
     });
 
     const createdSession = await createReviewOnlySession(tx, {
@@ -333,12 +335,39 @@ export async function createPracticeAgainSession(
   userId: string,
   input: z.infer<typeof practiceAgainSchema> = {},
 ) {
-  const { count = 10 } = practiceAgainSchema.parse(input);
+  const { count = 10, sessionId } = practiceAgainSchema.parse(input);
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
   ]);
   const studyDate = toStudyDate(new Date(), settings.studyTimeZone);
+
+  if (sessionId) {
+    const previousSession = await prisma.studySession.findFirst({
+      where: { id: sessionId, userId },
+      include: { cards: true },
+    });
+
+    if (!previousSession) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
+    }
+
+    const session = await prisma.$transaction(async (tx) => {
+      const createdSession = await createReviewOnlySession(tx, {
+        userId,
+        sessionType: StudySessionType.PRACTICE_AGAIN,
+        sectionId: previousSession.sectionId,
+        characterIds: previousSession.cards.map((card) => card.characterId),
+      });
+
+      return tx.studySession.findUniqueOrThrow({
+        where: { id: createdSession.id },
+        include: sessionInclude,
+      });
+    });
+
+    return serializeStudySession(session);
+  }
 
   const session = await prisma.$transaction(async (tx) => {
     const todayCompletions = await tx.dailyCharacterCompletion.findMany({
@@ -467,19 +496,19 @@ async function findAvailableNewCharacters(
   });
 }
 
-async function findDueReviewProgress(
+async function findReviewCandidates(
   tx: Prisma.TransactionClient,
   input: {
     userId: string;
     isPro: boolean;
     now: Date;
+    take?: number;
   },
 ) {
   const progress = await tx.userCharacterProgress.findMany({
     where: {
       userId: input.userId,
       status: { in: reviewStatuses },
-      nextReviewAt: { lte: input.now },
       character: input.isPro ? undefined : { isFree: true },
     },
     orderBy: { nextReviewAt: "asc" },
@@ -492,7 +521,13 @@ async function findDueReviewProgress(
     [CharacterStatus.MASTERED, 2],
   ]);
 
-  return progress.sort((a, b) => {
+  const sorted = progress.sort((a, b) => {
+    const aDue = a.nextReviewAt && a.nextReviewAt <= input.now ? 0 : 1;
+    const bDue = b.nextReviewAt && b.nextReviewAt <= input.now ? 0 : 1;
+    if (aDue !== bDue) {
+      return aDue - bDue;
+    }
+
     const statusDiff = (priority.get(a.status) ?? 99) - (priority.get(b.status) ?? 99);
     if (statusDiff !== 0) {
       return statusDiff;
@@ -500,6 +535,8 @@ async function findDueReviewProgress(
 
     return (a.nextReviewAt?.getTime() ?? 0) - (b.nextReviewAt?.getTime() ?? 0);
   });
+
+  return typeof input.take === "number" ? sorted.slice(0, input.take) : sorted;
 }
 
 async function createReviewOnlySession(
@@ -627,6 +664,27 @@ export async function submitReviewRating(
     });
 
     if (isPractice) {
+      const wasSeal =
+        progress.status === CharacterStatus.LEARNED ||
+        progress.status === CharacterStatus.MASTERED;
+      const isSeal =
+        srsUpdate.status === CharacterStatus.LEARNED ||
+        srsUpdate.status === CharacterStatus.MASTERED;
+      const becameSeal = !wasSeal && isSeal;
+
+      const updatedProgress = await tx.userCharacterProgress.update({
+        where: { id: progress.id },
+        data: {
+          lastReviewedAt: now,
+          nextReviewAt: srsUpdate.nextReviewAt,
+          reviewCount: srsUpdate.reviewCount,
+          successCount: srsUpdate.successCount,
+          consecutiveSuccessCount: srsUpdate.consecutiveSuccessCount,
+          status: srsUpdate.status,
+          isMastered: srsUpdate.isMastered,
+        },
+      });
+
       const updatedCard = await tx.studySessionCard.update({
         where: { id: card.id },
         data: {
@@ -634,15 +692,15 @@ export async function submitReviewRating(
           reviewedAt: now,
           revealed: true,
           statusBefore: card.statusBefore ?? progress.status,
-          statusAfter: progress.status,
-          becameSeal: false,
+          statusAfter: updatedProgress.status,
+          becameSeal,
         },
       });
 
       return {
         card: updatedCard,
-        progress,
-        becameSeal: false,
+        progress: updatedProgress,
+        becameSeal,
         createdDailyCompletion: false,
         completed,
       };

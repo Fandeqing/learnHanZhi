@@ -41,16 +41,17 @@ export async function getHome(userId: string) {
 
   await assertSectionUnlocked(userId, currentSection.id);
 
-  const dueReviewProgress = await prisma.userCharacterProgress.findMany({
+  const reviewProgress = await prisma.userCharacterProgress.findMany({
     where: {
       userId,
       status: { in: activeReviewStatuses },
-      nextReviewAt: { lte: now },
       character: user.isPro ? undefined : { isFree: true },
     },
     orderBy: { nextReviewAt: "asc" },
     include: { character: true },
   });
+  const reviewCandidates = sortReviewCandidates(reviewProgress, now);
+  const reviewDeck = reviewCandidates.slice(0, 10);
 
   const availableNewCharacters = await findAvailableNewCharactersForCurrentLevel(prisma, {
     userId,
@@ -120,7 +121,7 @@ export async function getHome(userId: string) {
     Math.max(settings.dailyNewCharacterGoal - todayNewLearnedCount, 0),
     availableNewCharacters.length,
   );
-  const totalCards = dueReviewProgress.length + dailyNewCharacterCount;
+  const totalCards = reviewDeck.length + dailyNewCharacterCount;
   const todayProgressTotal =
     latestDailySession?.totalCards ?? settings.dailyNewCharacterGoal;
   const isTodayComplete =
@@ -130,7 +131,7 @@ export async function getHome(userId: string) {
     ? "REVIEW_AGAIN_OR_LEARN_MORE"
     : dailyNewCharacterCount > 0 || todayProgressTotal > 0
       ? "START_LEARNING"
-      : user.isPro || dueReviewProgress.length === 0
+      : user.isPro || reviewDeck.length === 0
         ? "DONE"
         : "PAYWALL";
   const currentSectionProgress = (await getSectionsForUser(userId)).find(
@@ -158,15 +159,15 @@ export async function getHome(userId: string) {
     todayNewLearnedCount,
     todayExtraNewLearnedCount: todayExtraNewCount,
     todayNewCharacters,
-    dueReviewCount: dueReviewProgress.length,
-    dueReviewCharacters: dueReviewProgress.map((progress) =>
+    dueReviewCount: reviewDeck.length,
+    dueReviewCharacters: reviewDeck.map((progress) =>
       serializeCharacterSummary(progress.character),
     ),
     masteredCount,
     learnedCount,
     toLearnCount: Math.max(accessibleCharacterCount - learnedCount, 0),
     isDailyLearningComplete: isTodayComplete,
-    hasDueReviews: dueReviewProgress.length > 0,
+    hasDueReviews: reviewDeck.length > 0,
     dailyNewCharacterCount,
     totalCards,
     completedTodayCount,
@@ -185,6 +186,32 @@ export async function getHome(userId: string) {
     longestStreak: user.longestStreak,
     lastStudyDate: user.lastStudyDate,
   };
+}
+
+function sortReviewCandidates<T extends {
+  status: CharacterStatus;
+  nextReviewAt: Date | null;
+}>(progress: T[], now: Date) {
+  const priority = new Map<CharacterStatus, number>([
+    [CharacterStatus.LEARNING, 0],
+    [CharacterStatus.LEARNED, 1],
+    [CharacterStatus.MASTERED, 2],
+  ]);
+
+  return [...progress].sort((a, b) => {
+    const aDue = a.nextReviewAt && a.nextReviewAt <= now ? 0 : 1;
+    const bDue = b.nextReviewAt && b.nextReviewAt <= now ? 0 : 1;
+    if (aDue !== bDue) {
+      return aDue - bDue;
+    }
+
+    const statusDiff = (priority.get(a.status) ?? 99) - (priority.get(b.status) ?? 99);
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+
+    return (a.nextReviewAt?.getTime() ?? 0) - (b.nextReviewAt?.getTime() ?? 0);
+  });
 }
 
 function serializeCharacterSummary(character: {
