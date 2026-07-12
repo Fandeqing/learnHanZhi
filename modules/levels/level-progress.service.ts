@@ -168,6 +168,15 @@ export async function findAvailableNewCharactersForCurrentLevel(
             some: { userId: input.userId, status: CharacterStatus.NEW },
           },
         },
+        {
+          userProgress: {
+            some: {
+              userId: input.userId,
+              status: CharacterStatus.LEARNING,
+              nextReviewAt: null,
+            },
+          },
+        },
       ],
     },
     orderBy: [

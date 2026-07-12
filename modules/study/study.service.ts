@@ -64,6 +64,7 @@ export const practiceAgainSchema = z.object({
 
 export async function createDailyStudySession(userId: string) {
   const now = new Date();
+  const studyDate = toStudyDate(now);
   const [user, settings] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
@@ -75,11 +76,27 @@ export async function createDailyStudySession(userId: string) {
 
   await assertSectionUnlocked(userId, settings.currentSectionId);
 
+  const completedNewTodayCount = await prisma.dailyCharacterCompletion.count({
+    where: {
+      userId,
+      studyDate,
+      cardType: StudyCardType.NEW,
+    },
+  });
+  const remainingNewGoal = Math.max(
+    settings.dailyNewCharacterGoal - completedNewTodayCount,
+    0,
+  );
+
+  if (remainingNewGoal === 0) {
+    throw new ApiError(409, "DAILY_GOAL_COMPLETE", "Daily new character goal is complete.");
+  }
+
   const session = await prisma.$transaction(async (tx) => {
     const newCharacters = await findAvailableNewCharactersForCurrentLevel(tx, {
       userId,
       isPro: user.isPro,
-      take: settings.dailyNewCharacterGoal,
+      take: remainingNewGoal,
     });
 
     if (!user.isPro && newCharacters.length === 0) {
@@ -152,27 +169,27 @@ export async function createLearnMoreSession(
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
   ]);
-  const targetCharacterWithProgress = parsed.characterId
-    ? await prisma.character.findUnique({
-        where: { id: parsed.characterId },
-        include: {
-          userProgress: {
-            where: { userId },
-            take: 1,
+  const [targetCharacter, targetProgress] = parsed.characterId
+    ? await Promise.all([
+        prisma.character.findUnique({
+          where: { id: parsed.characterId },
+        }),
+        prisma.userCharacterProgress.findUnique({
+          where: {
+            userId_characterId: {
+              userId,
+              characterId: parsed.characterId,
+            },
           },
-        },
-      })
-    : null;
+        }),
+      ])
+    : [null, null];
 
-  if (parsed.characterId && !targetCharacterWithProgress) {
+  if (parsed.characterId && !targetCharacter) {
     throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
   }
 
-  if (
-    targetCharacterWithProgress &&
-    parsed.sectionId &&
-    targetCharacterWithProgress.sectionId !== parsed.sectionId
-  ) {
+  if (targetCharacter && parsed.sectionId && targetCharacter.sectionId !== parsed.sectionId) {
     throw new ApiError(
       400,
       "CHARACTER_SECTION_MISMATCH",
@@ -180,36 +197,24 @@ export async function createLearnMoreSession(
     );
   }
 
-  if (targetCharacterWithProgress && !user.isPro && !targetCharacterWithProgress.isFree) {
+  if (targetCharacter && !user.isPro && !targetCharacter.isFree) {
     return {
       paywallRequired: true,
       message: "Unlock Pro to continue learning all characters.",
     };
   }
 
-  const targetProgress = targetCharacterWithProgress?.userProgress[0];
   if (
-    targetCharacterWithProgress &&
+    targetCharacter &&
     targetProgress &&
-    targetProgress.status !== CharacterStatus.NEW
+    targetProgress.status !== CharacterStatus.NEW &&
+    !(
+      targetProgress.status === CharacterStatus.LEARNING &&
+      targetProgress.nextReviewAt == null
+    )
   ) {
     throw new ApiError(409, "CHARACTER_ALREADY_LEARNED", "Character is already learned.");
   }
-
-  const targetCharacter = targetCharacterWithProgress
-    ? {
-        id: targetCharacterWithProgress.id,
-        hanzi: targetCharacterWithProgress.hanzi,
-        pinyin: targetCharacterWithProgress.pinyin,
-        meaning: targetCharacterWithProgress.meaning,
-        example: targetCharacterWithProgress.example,
-        sectionId: targetCharacterWithProgress.sectionId,
-        orderIndex: targetCharacterWithProgress.orderIndex,
-        isFree: targetCharacterWithProgress.isFree,
-        createdAt: targetCharacterWithProgress.createdAt,
-        updatedAt: targetCharacterWithProgress.updatedAt,
-      }
-    : null;
 
   const sectionId = targetCharacter?.sectionId ?? parsed.sectionId ?? settings.currentSectionId;
 
@@ -441,6 +446,15 @@ async function findAvailableNewCharacters(
         {
           userProgress: {
             some: { userId: input.userId, status: CharacterStatus.NEW },
+          },
+        },
+        {
+          userProgress: {
+            some: {
+              userId: input.userId,
+              status: CharacterStatus.LEARNING,
+              nextReviewAt: null,
+            },
           },
         },
       ],

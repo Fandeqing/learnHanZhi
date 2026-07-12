@@ -67,26 +67,13 @@ export async function getCharacterDetail(
   }
 
   if (sessionId) {
-    await prisma.$transaction(async (tx) => {
-      await tx.studySessionCard.updateMany({
-        where: {
-          sessionId,
-          userId,
-          characterId,
-        },
-        data: { revealed: true },
-      });
-
-      await tx.userCharacterProgress.updateMany({
-        where: {
-          userId,
-          characterId,
-          status: CharacterStatus.NEW,
-        },
-        data: {
-          status: CharacterStatus.LEARNING,
-        },
-      });
+    await prisma.studySessionCard.updateMany({
+      where: {
+        sessionId,
+        userId,
+        characterId,
+      },
+      data: { revealed: true },
     });
   }
 

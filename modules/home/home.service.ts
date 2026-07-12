@@ -60,8 +60,6 @@ export async function getHome(userId: string) {
 
   const [
     completedTodayCount,
-    plannedNewCompletions,
-    todayExtraNewCount,
     todayNewCompletions,
     latestDailySession,
     masteredCount,
@@ -70,28 +68,6 @@ export async function getHome(userId: string) {
     bamboo,
   ] = await Promise.all([
     prisma.dailyCharacterCompletion.count({ where: { userId, studyDate } }),
-    prisma.dailyCharacterCompletion.findMany({
-      where: {
-        userId,
-        studyDate,
-        cardType: StudyCardType.NEW,
-        session: {
-          sessionType: StudySessionType.DAILY,
-        },
-      },
-      orderBy: { createdAt: "asc" },
-      include: { character: true },
-    }),
-    prisma.dailyCharacterCompletion.count({
-      where: {
-        userId,
-        studyDate,
-        cardType: StudyCardType.NEW,
-        session: {
-          sessionType: StudySessionType.LEARN_MORE,
-        },
-      },
-    }),
     prisma.dailyCharacterCompletion.findMany({
       where: {
         userId,
@@ -133,8 +109,12 @@ export async function getHome(userId: string) {
   ]);
 
   const todayNewLearnedCount = Math.min(
-    plannedNewCompletions.length,
+    todayNewCompletions.length,
     settings.dailyNewCharacterGoal,
+  );
+  const todayExtraNewCount = Math.max(
+    todayNewCompletions.length - settings.dailyNewCharacterGoal,
+    0,
   );
   const dailyNewCharacterCount = Math.min(
     Math.max(settings.dailyNewCharacterGoal - todayNewLearnedCount, 0),
@@ -166,7 +146,7 @@ export async function getHome(userId: string) {
   );
   const plannedNewCharacters = availableNewCharacters
     .filter((character) => !completedNewCharacterIds.has(character.id))
-    .slice(0, Math.max(settings.dailyNewCharacterGoal - plannedNewCompletions.length, 0))
+    .slice(0, Math.max(settings.dailyNewCharacterGoal - todayNewCompletions.length, 0))
     .map(serializeCharacterSummary);
   const todayNewCharacters = [
     ...completedNewCharacters,
@@ -235,7 +215,11 @@ async function getSealBookPreview(userId: string, sectionId: string) {
   });
 
   return characters.map((character) => {
-    const status = publicStatus(character.userProgress[0]?.status);
+    const progress = character.userProgress[0];
+    const status =
+      progress?.status === CharacterStatus.LEARNING && progress.nextReviewAt == null
+        ? CharacterStatus.NEW
+        : publicStatus(progress?.status);
     const isCollected =
       status === CharacterStatus.LEARNED || status === CharacterStatus.MASTERED;
 
