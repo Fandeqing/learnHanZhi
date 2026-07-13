@@ -13,12 +13,11 @@ import {
 } from "@/modules/sections/section.service";
 import { publicStatus } from "@/modules/shared/serializers";
 import { getStudyDateUtcBounds, toStudyDate } from "@/modules/shared/dates";
-
-const activeReviewStatuses = [
-  CharacterStatus.LEARNING,
-  CharacterStatus.LEARNED,
-  CharacterStatus.MASTERED,
-];
+import {
+  reviewCandidateWhere,
+  reviewSessionLimit,
+  selectReviewCandidates,
+} from "@/modules/study/review-candidates";
 
 export async function getHome(userId: string) {
   const now = new Date();
@@ -42,17 +41,14 @@ export async function getHome(userId: string) {
   await assertSectionUnlocked(userId, currentSection.id);
 
   const reviewProgress = await prisma.userCharacterProgress.findMany({
-    where: {
+    where: reviewCandidateWhere({
       userId,
-      status: { in: activeReviewStatuses },
-      nextReviewAt: { lte: now },
-      character: user.isPro ? undefined : { isFree: true },
-    },
-    orderBy: { nextReviewAt: "asc" },
+      isPro: user.isPro,
+    }),
+    orderBy: [{ nextReviewAt: "asc" }, { lastReviewedAt: "asc" }, { updatedAt: "asc" }],
     include: { character: true },
   });
-  const reviewCandidates = sortReviewCandidates(reviewProgress, now);
-  const reviewDeck = reviewCandidates.slice(0, 10);
+  const reviewDeck = selectReviewCandidates(reviewProgress, now, reviewSessionLimit);
 
   const availableNewCharacters = await findAvailableNewCharactersForCurrentLevel(prisma, {
     userId,
@@ -200,32 +196,6 @@ export async function getHome(userId: string) {
     longestStreak: user.longestStreak,
     lastStudyDate: user.lastStudyDate,
   };
-}
-
-function sortReviewCandidates<T extends {
-  status: CharacterStatus;
-  nextReviewAt: Date | null;
-}>(progress: T[], now: Date) {
-  const priority = new Map<CharacterStatus, number>([
-    [CharacterStatus.LEARNING, 0],
-    [CharacterStatus.LEARNED, 1],
-    [CharacterStatus.MASTERED, 2],
-  ]);
-
-  return [...progress].sort((a, b) => {
-    const aDue = a.nextReviewAt && a.nextReviewAt <= now ? 0 : 1;
-    const bDue = b.nextReviewAt && b.nextReviewAt <= now ? 0 : 1;
-    if (aDue !== bDue) {
-      return aDue - bDue;
-    }
-
-    const statusDiff = (priority.get(a.status) ?? 99) - (priority.get(b.status) ?? 99);
-    if (statusDiff !== 0) {
-      return statusDiff;
-    }
-
-    return (a.nextReviewAt?.getTime() ?? 0) - (b.nextReviewAt?.getTime() ?? 0);
-  });
 }
 
 function serializeCharacterSummary(character: {

@@ -24,12 +24,12 @@ import {
   isSameStudyDate,
   toStudyDate,
 } from "@/modules/shared/dates";
-
-const reviewStatuses = [
-  CharacterStatus.LEARNING,
-  CharacterStatus.LEARNED,
-  CharacterStatus.MASTERED,
-];
+import {
+  reviewCandidateWhere,
+  reviewSessionLimit,
+  reviewStatuses,
+  selectReviewCandidates,
+} from "@/modules/study/review-candidates";
 
 const practiceSessionTypes = new Set<StudySessionType>([
   StudySessionType.PRACTICE_AGAIN,
@@ -312,8 +312,12 @@ export async function createDueReviewSession(userId: string) {
       userId,
       isPro: user.isPro,
       now: new Date(),
-      take: 10,
+      take: reviewSessionLimit,
     });
+
+    if (reviewProgress.length === 0) {
+      throw new ApiError(409, "NO_REVIEW_CARDS", "No review cards are available.");
+    }
 
     const createdSession = await createReviewOnlySession(tx, {
       userId,
@@ -506,38 +510,15 @@ async function findReviewCandidates(
   },
 ) {
   const progress = await tx.userCharacterProgress.findMany({
-    where: {
+    where: reviewCandidateWhere({
       userId: input.userId,
-      status: { in: reviewStatuses },
-      nextReviewAt: { lte: input.now },
-      character: input.isPro ? undefined : { isFree: true },
-    },
-    orderBy: { nextReviewAt: "asc" },
+      isPro: input.isPro,
+    }),
+    orderBy: [{ nextReviewAt: "asc" }, { lastReviewedAt: "asc" }, { updatedAt: "asc" }],
     include: { character: true },
   });
 
-  const priority = new Map<CharacterStatus, number>([
-    [CharacterStatus.LEARNING, 0],
-    [CharacterStatus.LEARNED, 1],
-    [CharacterStatus.MASTERED, 2],
-  ]);
-
-  const sorted = progress.sort((a, b) => {
-    const aDue = a.nextReviewAt && a.nextReviewAt <= input.now ? 0 : 1;
-    const bDue = b.nextReviewAt && b.nextReviewAt <= input.now ? 0 : 1;
-    if (aDue !== bDue) {
-      return aDue - bDue;
-    }
-
-    const statusDiff = (priority.get(a.status) ?? 99) - (priority.get(b.status) ?? 99);
-    if (statusDiff !== 0) {
-      return statusDiff;
-    }
-
-    return (a.nextReviewAt?.getTime() ?? 0) - (b.nextReviewAt?.getTime() ?? 0);
-  });
-
-  return typeof input.take === "number" ? sorted.slice(0, input.take) : sorted;
+  return selectReviewCandidates(progress, input.now, input.take);
 }
 
 async function createReviewOnlySession(
