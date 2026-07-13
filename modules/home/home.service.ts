@@ -45,6 +45,7 @@ export async function getHome(userId: string) {
     where: {
       userId,
       status: { in: activeReviewStatuses },
+      nextReviewAt: { lte: now },
       character: user.isPro ? undefined : { isFree: true },
     },
     orderBy: { nextReviewAt: "asc" },
@@ -76,7 +77,16 @@ export async function getHome(userId: string) {
         cardType: StudyCardType.NEW,
       },
       orderBy: { createdAt: "asc" },
-      include: { character: true },
+      include: {
+        character: {
+          include: {
+            userProgress: {
+              where: { userId },
+              take: 1,
+            },
+          },
+        },
+      },
     }),
     prisma.studySession.findFirst({
       where: {
@@ -143,12 +153,16 @@ export async function getHome(userId: string) {
     todayNewCompletions.map((completion) => completion.characterId),
   );
   const completedNewCharacters = todayNewCompletions.map((completion) =>
-    serializeCharacterSummary(completion.character),
+    serializeCharacterSummary(completion.character, {
+      status: publicStatus(completion.character.userProgress[0]?.status),
+    }),
   );
   const plannedNewCharacters = availableNewCharacters
     .filter((character) => !completedNewCharacterIds.has(character.id))
     .slice(0, Math.max(settings.dailyNewCharacterGoal - todayNewCompletions.length, 0))
-    .map(serializeCharacterSummary);
+    .map((character) =>
+      serializeCharacterSummary(character, { status: CharacterStatus.NEW }),
+    );
   const todayNewCharacters = [
     ...completedNewCharacters,
     ...plannedNewCharacters,
@@ -219,12 +233,13 @@ function serializeCharacterSummary(character: {
   hanzi: string;
   sectionId: string;
   orderIndex: number;
-}) {
+}, options: { status?: CharacterStatus } = {}) {
   return {
     id: character.id,
     hanzi: character.hanzi,
     sectionId: character.sectionId,
     orderIndex: character.orderIndex,
+    status: options.status,
   };
 }
 
@@ -241,14 +256,26 @@ async function getSealBookPreview(userId: string, sectionId: string) {
     },
   });
 
+  const collectedCompletions = await prisma.dailyCharacterCompletion.findMany({
+    where: {
+      userId,
+      cardType: StudyCardType.NEW,
+      characterId: { in: characters.map((character) => character.id) },
+    },
+    distinct: ["characterId"],
+    select: { characterId: true },
+  });
+  const collectedIds = new Set(
+    collectedCompletions.map((completion) => completion.characterId),
+  );
+
   return characters.map((character) => {
     const progress = character.userProgress[0];
     const status =
       progress?.status === CharacterStatus.LEARNING && progress.nextReviewAt == null
         ? CharacterStatus.NEW
         : publicStatus(progress?.status);
-    const isCollected =
-      status === CharacterStatus.LEARNED || status === CharacterStatus.MASTERED;
+    const isCollected = collectedIds.has(character.id);
 
     return {
       characterId: character.id,

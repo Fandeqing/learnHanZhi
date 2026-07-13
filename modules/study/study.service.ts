@@ -509,6 +509,7 @@ async function findReviewCandidates(
     where: {
       userId: input.userId,
       status: { in: reviewStatuses },
+      nextReviewAt: { lte: input.now },
       character: input.isPro ? undefined : { isFree: true },
     },
     orderBy: { nextReviewAt: "asc" },
@@ -616,7 +617,7 @@ export async function submitReviewRating(
     }
 
     const isPractice = practiceSessionTypes.has(session.sessionType);
-    const completed = rating !== ReviewRating.AGAIN && rating !== ReviewRating.HARD;
+    const completed = true;
 
     const existingProgress = await tx.userCharacterProgress.findUnique({
       where: {
@@ -757,7 +758,7 @@ export async function submitReviewRating(
     });
 
     let createdDailyCompletion = false;
-    if (completed && !existingCompletion) {
+    if (card.cardType === StudyCardType.NEW && !existingCompletion) {
       await tx.dailyCharacterCompletion.create({
         data: {
           userId,
