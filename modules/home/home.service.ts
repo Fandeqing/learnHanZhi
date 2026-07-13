@@ -169,15 +169,15 @@ export async function getHome(userId: string) {
     todayNewLearnedCount,
     todayExtraNewLearnedCount: todayExtraNewCount,
     todayNewCharacters,
-    dueReviewCount: reviewDeck.length,
-    dueReviewCharacters: reviewDeck.map((progress) =>
+    reviewAvailableCount: reviewDeck.length,
+    reviewCharacters: reviewDeck.map((progress) =>
       serializeCharacterSummary(progress.character),
     ),
     masteredCount,
     learnedCount,
     toLearnCount: Math.max(accessibleCharacterCount - learnedCount, 0),
     isDailyLearningComplete: isTodayComplete,
-    hasDueReviews: reviewDeck.length > 0,
+    hasReviewCards: reviewDeck.length > 0,
     dailyNewCharacterCount,
     totalCards,
     completedTodayCount,

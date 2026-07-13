@@ -301,7 +301,7 @@ export async function createLearnMoreSession(
   return serializeStudySession(session);
 }
 
-export async function createDueReviewSession(userId: string) {
+export async function createReviewSession(userId: string) {
   const [user] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { id: userId } }),
     ensureUserSettings(userId),
@@ -888,19 +888,6 @@ export async function completeStudySession(userId: string, sessionId: string) {
     },
   });
 
-  const user = await prisma.user.findUniqueOrThrow({
-    where: { id: userId },
-    select: { isPro: true },
-  });
-  const stillDueCount = await prisma.userCharacterProgress.count({
-    where: {
-      userId,
-      status: { in: reviewStatuses },
-      nextReviewAt: { lte: new Date() },
-      character: user.isPro ? undefined : { isFree: true },
-    },
-  });
-
   return {
     sessionId: session.id,
     sessionType: session.sessionType,
@@ -912,7 +899,6 @@ export async function completeStudySession(userId: string, sessionId: string) {
     newlyCompletedLevelIndexes,
     levelCompleted: newlyCompletedLevelIndexes.length > 0,
     masteredToday,
-    stillDueCount,
     newSeals,
   };
 }
