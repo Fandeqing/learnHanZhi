@@ -41,10 +41,7 @@ export function calculateSrsUpdate(input: {
   } else if (input.rating === ReviewRating.EASY || input.rating === ReviewRating.KNOW) {
     status = CharacterStatus.MASTERED;
   } else {
-    status =
-      input.currentStatus === CharacterStatus.MASTERED
-        ? CharacterStatus.MASTERED
-        : CharacterStatus.LEARNED;
+    status = CharacterStatus.LEARNED;
   }
 
   return {
