@@ -42,6 +42,7 @@ export function serializeStudySessionCard(
       hanzi: card.character.hanzi,
       sectionId: card.character.sectionId,
       orderIndex: card.character.orderIndex,
+      status: card.statusBefore,
     },
   };
 }

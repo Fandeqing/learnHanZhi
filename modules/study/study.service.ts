@@ -141,6 +141,7 @@ export async function createDailyStudySession(userId: string) {
         userId,
         characterId: character.id,
         cardType: StudyCardType.NEW,
+        statusBefore: CharacterStatus.NEW,
       })),
     });
 
@@ -282,6 +283,7 @@ export async function createLearnMoreSession(
         userId,
         characterId: character.id,
         cardType: StudyCardType.NEW,
+        statusBefore: CharacterStatus.NEW,
       })),
     });
 
@@ -433,26 +435,11 @@ export async function createReviewAgainSession(userId: string, sessionId: string
   );
 
   const session = await prisma.$transaction(async (tx) => {
-    const createdSession = await tx.studySession.create({
-      data: {
-        userId,
-        sessionType: StudySessionType.REVIEW_AGAIN,
-        sectionId: previousSession.sectionId,
-        totalCards: uniqueCharacterIds.length,
-        reviewCount: uniqueCharacterIds.length,
-        newCount: 0,
-        completedCount: 0,
-        startedAt: new Date(),
-      },
-    });
-
-    await tx.studySessionCard.createMany({
-      data: uniqueCharacterIds.map((characterId) => ({
-        sessionId: createdSession.id,
-        userId,
-        characterId,
-        cardType: StudyCardType.REVIEW,
-      })),
+    const createdSession = await createReviewOnlySession(tx, {
+      userId,
+      sessionType: StudySessionType.REVIEW_AGAIN,
+      sectionId: previousSession.sectionId,
+      characterIds: uniqueCharacterIds,
     });
 
     return tx.studySession.findUniqueOrThrow({
@@ -545,12 +532,27 @@ async function createReviewOnlySession(
   });
 
   if (uniqueCharacterIds.length > 0) {
+    const progress = await tx.userCharacterProgress.findMany({
+      where: {
+        userId: input.userId,
+        characterId: { in: uniqueCharacterIds },
+      },
+      select: {
+        characterId: true,
+        status: true,
+      },
+    });
+    const statusByCharacterId = new Map(
+      progress.map((item) => [item.characterId, item.status]),
+    );
+
     await tx.studySessionCard.createMany({
       data: uniqueCharacterIds.map((characterId) => ({
         sessionId: createdSession.id,
         userId: input.userId,
         characterId,
         cardType: StudyCardType.REVIEW,
+        statusBefore: statusByCharacterId.get(characterId) ?? CharacterStatus.NEW,
       })),
     });
   }
@@ -958,6 +960,7 @@ export async function createManualReviewSession(userId: string, characterId: str
         userId,
         characterId,
         cardType: StudyCardType.REVIEW,
+        statusBefore: progress.status,
       },
     });
 
