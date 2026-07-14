@@ -859,6 +859,16 @@ export async function completeStudySession(userId: string, sessionId: string) {
   const reviewCards = reviewedCards.filter(
     (card) => card.cardType === StudyCardType.REVIEW,
   );
+  const newCharacters = newCards.map((card) => ({
+    characterId: card.characterId,
+    hanzi: card.character.hanzi,
+    status: card.statusAfter,
+  }));
+  const reviewedCharacters = reviewCards.map((card) => ({
+    characterId: card.characterId,
+    hanzi: card.character.hanzi,
+    status: card.statusAfter,
+  }));
   const newSeals = reviewedCards
     .filter((card) => card.becameSeal)
     .map((card) => ({
@@ -902,6 +912,8 @@ export async function completeStudySession(userId: string, sessionId: string) {
     levelCompleted: newlyCompletedLevelIndexes.length > 0,
     masteredToday,
     newSeals,
+    newCharacters,
+    reviewedCharacters,
   };
 }
 
