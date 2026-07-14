@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "npm run dev:staging",
+    "dev:staging": "node scripts/start-dev.cjs .env.staging",
+    "dev:production": "node scripts/start-dev.cjs .env.production",
     "dev:turbo": "next dev --turbopack",
     "build": "prisma generate && next build",
     "start": "prisma migrate deploy && next start",
@@ -26,6 +28,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^16.6.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^6.11.1",
