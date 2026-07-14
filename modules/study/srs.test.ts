@@ -58,7 +58,7 @@ describe("calculateSrsUpdate", () => {
     expect(result.nextReviewAt.toISOString()).toBe("2026-07-18T00:00:00.000Z");
   });
 
-  it("downgrades mastered to learned on AGAIN", () => {
+  it("moves mastered characters back to learning on AGAIN", () => {
     const result = calculateSrsUpdate(
       baseInput({
         rating: ReviewRating.AGAIN,
@@ -67,7 +67,7 @@ describe("calculateSrsUpdate", () => {
       }),
     );
 
-    expect(result.status).toBe(CharacterStatus.LEARNED);
+    expect(result.status).toBe(CharacterStatus.LEARNING);
     expect(result.isMastered).toBe(false);
   });
 });

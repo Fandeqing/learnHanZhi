@@ -37,10 +37,7 @@ export function calculateSrsUpdate(input: {
   let status: CharacterStatus;
 
   if (input.rating === ReviewRating.AGAIN || input.rating === ReviewRating.HARD) {
-    status =
-      input.currentStatus === CharacterStatus.MASTERED
-        ? CharacterStatus.LEARNED
-        : CharacterStatus.LEARNING;
+    status = CharacterStatus.LEARNING;
   } else if (input.rating === ReviewRating.EASY || input.rating === ReviewRating.KNOW) {
     status = CharacterStatus.MASTERED;
   } else {
