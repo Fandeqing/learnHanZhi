@@ -6,7 +6,7 @@ This schema targets Railway PostgreSQL with Prisma. Set `DATABASE_URL` to the Ra
 
 - `User`: anonymous app user identified by `deviceId`; stores the current Lifetime Pro entitlement snapshot.
 - `UserSetting`: one settings row per user; stores daily new character goal, audio preferences, and current section.
-- `Section`: the three MVP learning sections: Basics, Daily Life, and Expression.
+- `Section`: five learning sections spanning 25 levels and 500 characters.
 - `Character`: canonical Hanzi card content, including pinyin, English meaning, memory hook, section, order, difficulty, audio text, and free access flag.
 - `UserCharacterProgress`: per-user SRS state for each character. The `(userId, characterId)` unique key ensures one progress row per user and card.
 - `StudySession`: one learning/review session, including counts and completion timestamps.
@@ -79,8 +79,10 @@ model UserCollectionPiece {
 
 Seed `sections` first:
 
-- `basics`: order `1`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `daily_life`: order `2`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `city_life`: order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `basics`: Levels `1-5`, order `1`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `people_and_home`: Levels `6-10`, order `2`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `daily_routines`: Levels `11-15`, order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `around_town`: Levels `16-20`, order `4`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `explore_more`: Levels `21-25`, order `5`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 
-Then seed 300 `characters`, 100 per section. Mark the free tier with `isFree = true` for the first 30-50 Basics characters, and `false` for the remaining characters.
+Then seed 500 `characters`, 100 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30-50 Basics characters, and `false` for the remaining characters.

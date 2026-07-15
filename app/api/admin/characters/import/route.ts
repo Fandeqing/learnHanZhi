@@ -1,9 +1,13 @@
 import { handleRouteError, ok } from "@/lib/api-response";
 import { ApiError } from "@/lib/api-error";
-import { importCharactersFromJson } from "@/modules/admin/character-import.service";
+import {
+  type CharacterImportMode,
+  importCharactersFromJson,
+} from "@/modules/admin/character-import.service";
 
 export async function POST(request: Request) {
   try {
+    const mode = importModeFromRequest(request);
     const contentType = request.headers.get("content-type") ?? "";
     let json: unknown;
 
@@ -29,10 +33,20 @@ export async function POST(request: Request) {
       json = parseJson(await request.text());
     }
 
-    return ok(await importCharactersFromJson(json), { status: 201 });
+    return ok(await importCharactersFromJson(json, mode), { status: 201 });
   } catch (error) {
     return handleRouteError(error);
   }
+}
+
+function importModeFromRequest(request: Request): CharacterImportMode {
+  const mode = new URL(request.url).searchParams.get("mode") ?? "upsert";
+
+  if (mode === "upsert" || mode === "replace") {
+    return mode;
+  }
+
+  throw new ApiError(400, "INVALID_IMPORT_MODE", "Import mode must be upsert or replace.");
 }
 
 function parseJson(text: string) {

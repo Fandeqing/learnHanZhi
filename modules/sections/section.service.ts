@@ -1,34 +1,33 @@
 import { Prisma, StudyCardType, type Section } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import {
+  CONTENT_SECTIONS,
+  SECTION_CHARACTER_COUNT,
+  SECTION_UNLOCK_LEARNED_REQUIRED,
+} from "@/modules/content/content-plan";
 
-const defaultSections = [
-  {
-    key: "basics",
-    name: "Basics",
-    description: "The most common beginner Chinese characters.",
-    orderIndex: 1,
-  },
-  {
-    key: "daily_life",
-    name: "Daily Life",
-    description: "Characters for daily life and common objects.",
-    orderIndex: 2,
-  },
-  {
-    key: "city_life",
-    name: "City Life",
-    description: "Characters for navigating daily life in a Chinese-speaking city.",
-    orderIndex: 3,
-  },
-] as const;
+const defaultSections = CONTENT_SECTIONS.map((section) => ({
+  key: section.key,
+  name: section.name,
+  description: section.description,
+  orderIndex: section.orderIndex,
+  totalCharacters: SECTION_CHARACTER_COUNT,
+  unlockLearnedRequired: SECTION_UNLOCK_LEARNED_REQUIRED,
+}));
 
 export async function ensureDefaultSections() {
   await prisma.$transaction(
     defaultSections.map((section) =>
       prisma.section.upsert({
         where: { key: section.key },
-        update: {},
+        update: {
+          name: section.name,
+          description: section.description,
+          orderIndex: section.orderIndex,
+          totalCharacters: section.totalCharacters,
+          unlockLearnedRequired: section.unlockLearnedRequired,
+        },
         create: section,
       }),
     ),

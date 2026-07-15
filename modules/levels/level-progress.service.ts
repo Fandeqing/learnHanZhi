@@ -6,9 +6,13 @@ import {
   type Section,
 } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import {
+  LEVEL_SIZE,
+  TOTAL_LEVELS,
+  contentSectionForLevel,
+} from "@/modules/content/content-plan";
 
-export const LEVEL_SIZE = 20;
-export const TOTAL_LEVELS = 15;
+export { LEVEL_SIZE, TOTAL_LEVELS } from "@/modules/content/content-plan";
 
 export type LevelState = "locked" | "notStarted" | "inProgress" | "completed" | "mastered";
 
@@ -76,6 +80,7 @@ export async function getBambooProgress(
     const isUnlocked = previousCompleted || learnedCount > 0;
     const firstCharacter = levelCharacters[0];
     const lastCharacter = levelCharacters[levelCharacters.length - 1];
+    const configuredSection = contentSectionForLevel(levelIndex);
     const completed = learnedCount >= totalCount && totalCount > 0;
     const mastered = completed && masteredCount >= totalCount;
 
@@ -93,8 +98,8 @@ export async function getBambooProgress(
               ? "inProgress"
               : "notStarted",
       sectionId: firstCharacter?.sectionId ?? null,
-      sectionKey: firstCharacter?.section.key ?? null,
-      sectionName: firstCharacter?.section.name ?? null,
+      sectionKey: firstCharacter?.section.key ?? configuredSection?.key ?? null,
+      sectionName: firstCharacter?.section.name ?? configuredSection?.name ?? null,
       title: levelTitle(levelIndex),
       subtitle: levelSubtitle(levelIndex),
       startOrderIndex: firstCharacter?.orderIndex ?? null,
@@ -241,19 +246,16 @@ function bucketCharacters(characters: OrderedCharacter[]) {
 }
 
 function levelTitle(levelIndex: number) {
-  const groupIndex = Math.floor((levelIndex - 1) / 5);
   const numberIndex = (levelIndex - 1) % 5;
-  const groups = ["Basics", "Daily Life", "Expression"];
+  const section = contentSectionForLevel(levelIndex);
   const numerals = ["I", "II", "III", "IV", "V"];
-  return `${groups[groupIndex] ?? "Level"} ${numerals[numberIndex] ?? levelIndex}`;
+  return `${section?.name ?? "Level"} ${numerals[numberIndex] ?? levelIndex}`;
 }
 
 function levelSubtitle(levelIndex: number) {
-  const groupIndex = Math.floor((levelIndex - 1) / 5);
   const numberIndex = (levelIndex - 1) % 5;
-  const groups = ["基础", "日常", "表达"];
+  const section = contentSectionForLevel(levelIndex);
   const numerals = ["一", "二", "三", "四", "五"];
-  const group = groups[groupIndex];
   const numeral = numerals[numberIndex];
-  return group && numeral ? `${group} ${numeral}` : null;
+  return section && numeral ? `${section.subtitle} ${numeral}` : null;
 }

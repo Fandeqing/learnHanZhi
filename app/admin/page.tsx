@@ -17,6 +17,11 @@ export default function AdminPage() {
   async function importFromFile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    await importSelectedFile();
+  }
+
+  async function importSelectedFile(mode: "upsert" | "replace" = "upsert") {
+
     if (!file) {
       setResult({
         status: 0,
@@ -34,7 +39,7 @@ export default function AdminPage() {
     const formData = new FormData();
     formData.set("file", file);
 
-    await sendImportRequest(formData);
+    await sendImportRequest(formData, undefined, mode);
   }
 
   async function importFromText(event: FormEvent<HTMLFormElement>) {
@@ -57,7 +62,11 @@ export default function AdminPage() {
     }
   }
 
-  async function sendImportRequest(body: BodyInit, contentType?: string) {
+  async function sendImportRequest(
+    body: BodyInit,
+    contentType?: string,
+    mode: "upsert" | "replace" = "upsert",
+  ) {
     setLoading(true);
 
     try {
@@ -66,7 +75,7 @@ export default function AdminPage() {
         headers.set("content-type", contentType);
       }
 
-      const response = await fetch("/api/admin/characters/import", {
+      const response = await fetch(`/api/admin/characters/import?mode=${mode}`, {
         method: "POST",
         headers,
         body,
@@ -90,6 +99,42 @@ export default function AdminPage() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function replaceSelectedFile() {
+    const confirmed = window.confirm(
+      "Replace the full character dataset? The file must contain exactly 500 characters. This deletes all existing characters and every user's learning progress and study history. User accounts, settings, and purchases stay.",
+    );
+
+    if (confirmed) {
+      await importSelectedFile("replace");
+    }
+  }
+
+  async function replacePastedJson() {
+    const confirmed = window.confirm(
+      "Replace the full character dataset? The pasted JSON must contain exactly 500 characters. This deletes all existing characters and every user's learning progress and study history. User accounts, settings, and purchases stay.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(jsonText);
+      await sendImportRequest(JSON.stringify(parsed), "application/json", "replace");
+    } catch {
+      setResult({
+        status: 0,
+        body: {
+          success: false,
+          error: {
+            code: "INVALID_JSON",
+            message: "The pasted text is not valid JSON.",
+          },
+        },
+      });
     }
   }
 
@@ -147,6 +192,15 @@ export default function AdminPage() {
           </p>
         </header>
 
+        <section className="rounded border border-amber-900/60 bg-amber-950/20 p-4">
+          <h2 className="text-lg font-semibold text-amber-100">Full Dataset Replacement</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100/70">
+            The replacement actions below require the complete 500-character, 25-level JSON.
+            They delete existing characters and all character-dependent learning data before
+            importing. User accounts, settings, and purchases are preserved.
+          </p>
+        </section>
+
         <section className="rounded border border-red-900/60 bg-red-950/20 p-4">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -187,13 +241,23 @@ export default function AdminPage() {
               className="mt-5 block w-full rounded border border-zinc-700 bg-zinc-950 p-3 text-sm file:mr-3 file:rounded file:border-0 file:bg-zinc-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-zinc-950"
             />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-4 h-10 rounded bg-zinc-100 px-4 text-sm font-medium text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-            >
-              {loading ? "Importing..." : "Import File"}
-            </button>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="h-10 rounded bg-zinc-100 px-4 text-sm font-medium text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {loading ? "Importing..." : "Import File"}
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void replaceSelectedFile()}
+                className="h-10 rounded bg-amber-500 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {loading ? "Importing..." : "Replace Full Dataset"}
+              </button>
+            </div>
           </form>
 
           <form
@@ -213,13 +277,23 @@ export default function AdminPage() {
               className="mt-5 w-full rounded border border-zinc-700 bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-zinc-400"
             />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="mt-4 h-10 rounded bg-zinc-100 px-4 text-sm font-medium text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-            >
-              {loading ? "Importing..." : "Import Pasted JSON"}
-            </button>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="h-10 rounded bg-zinc-100 px-4 text-sm font-medium text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {loading ? "Importing..." : "Import Pasted JSON"}
+              </button>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void replacePastedJson()}
+                className="h-10 rounded bg-amber-500 px-4 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {loading ? "Importing..." : "Replace Full Dataset"}
+              </button>
+            </div>
           </form>
         </section>
 
