@@ -16,9 +16,9 @@ const defaultSections = [
     orderIndex: 2,
   },
   {
-    key: "expression",
-    name: "Expression",
-    description: "Characters used in simple expressions and sentences.",
+    key: "city_life",
+    name: "City Life",
+    description: "Characters for navigating daily life in a Chinese-speaking city.",
     orderIndex: 3,
   },
 ] as const;

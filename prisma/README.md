@@ -81,6 +81,6 @@ Seed `sections` first:
 
 - `basics`: order `1`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 - `daily_life`: order `2`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `expression`: order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `city_life`: order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 
 Then seed 300 `characters`, 100 per section. Mark the free tier with `isFree = true` for the first 30-50 Basics characters, and `false` for the remaining characters.
