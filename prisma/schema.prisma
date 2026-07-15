@@ -120,7 +120,8 @@ model Character {
   structure                String
   memoryHook               String
   exampleWord              String
-  exampleMeaning           String
+  examplePinyin            String
+  exampleMeaningEn         String
   sectionId                String                  @db.Uuid
   difficulty               Int                     @default(1)
   audioText                String

@@ -11,8 +11,11 @@ const characterImportItemSchema = z.object({
   structure: z.string().trim().min(1, "structure is required."),
   memoryHook: z.string().trim().min(1, "memoryHook is required."),
   exampleWord: z.string().trim().min(1, "exampleWord is required."),
-  exampleMeaning: z.string().trim().min(1, "exampleMeaning is required."),
+  examplePinyin: z.string().trim().min(1, "examplePinyin is required."),
+  exampleMeaningEn: z.string().trim().min(1, "exampleMeaningEn is required."),
   sectionKey: z.string().trim().min(1, "sectionKey is required."),
+  level: z.number().int().min(1).max(15),
+  orderInLevel: z.number().int().min(1).max(20),
   difficulty: z.number().int().min(1).max(5).default(1),
   audioText: z.string().trim().min(1, "audioText is required."),
   orderIndex: z.number().int().positive("orderIndex must be positive."),
@@ -26,6 +29,7 @@ type CharacterImportItem = z.infer<typeof characterImportItemSchema>;
 export async function importCharactersFromJson(rawJson: unknown) {
   const items = characterImportSchema.parse(rawJson);
   validateNoDuplicateKeys(items);
+  validateLevelOrdering(items);
 
   await ensureDefaultSections();
 
@@ -84,7 +88,8 @@ export async function importCharactersFromJson(rawJson: unknown) {
           structure: item.structure,
           memoryHook: item.memoryHook,
           exampleWord: item.exampleWord,
-          exampleMeaning: item.exampleMeaning,
+          examplePinyin: item.examplePinyin,
+          exampleMeaningEn: item.exampleMeaningEn,
           sectionId: section.id,
           difficulty: item.difficulty,
           audioText: item.audioText,
@@ -135,6 +140,20 @@ export async function importCharactersFromJson(rawJson: unknown) {
     }
 
     throw error;
+  }
+}
+
+function validateLevelOrdering(items: CharacterImportItem[]) {
+  for (const item of items) {
+    const expectedOrderIndex = (item.level - 1) * 20 + item.orderInLevel;
+
+    if (item.orderIndex !== expectedOrderIndex) {
+      throw new ApiError(
+        400,
+        "INVALID_LEVEL_ORDER",
+        `Expected orderIndex ${expectedOrderIndex} for level ${item.level}, orderInLevel ${item.orderInLevel}.`,
+      );
+    }
   }
 }
 
