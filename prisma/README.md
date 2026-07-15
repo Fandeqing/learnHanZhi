@@ -81,8 +81,8 @@ Seed `sections` first:
 
 - `basics`: Levels `1-5`, order `1`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 - `people_and_home`: Levels `6-10`, order `2`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `daily_routines`: Levels `11-15`, order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `around_town`: Levels `16-20`, order `4`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `explore_more`: Levels `21-25`, order `5`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `daily_life`: Levels `11-15`, order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `school_and_city`: Levels `16-20`, order `4`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `work_and_world`: Levels `21-25`, order `5`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 
 Then seed 500 `characters`, 100 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30-50 Basics characters, and `false` for the remaining characters.
