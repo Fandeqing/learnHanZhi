@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import { FREE_CHARACTER_LIMIT } from "@/modules/access/free-tier.service";
 import {
   LEVEL_SIZE,
   SECTION_CHARACTER_COUNT,
@@ -239,6 +240,17 @@ function validateFullDataset(items: CharacterImportItem[]) {
         `Section ${expectedSection?.key ?? "unknown"} must contain exactly ${SECTION_CHARACTER_COUNT} characters.`,
       );
     }
+  }
+
+  const freeFlagMismatch = items.find(
+    (item) => item.isFree !== (item.orderIndex <= FREE_CHARACTER_LIMIT),
+  );
+  if (freeFlagMismatch) {
+    throw new ApiError(
+      400,
+      "INVALID_FREE_CHARACTER_RANGE",
+      `Characters 1-${FREE_CHARACTER_LIMIT} must set isFree to true; all later characters must set it to false.`,
+    );
   }
 }
 

@@ -8,22 +8,12 @@ export async function getCharacterDetail(
   characterId: string,
   sessionId?: string | null,
 ) {
-  const [user, character] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
-    prisma.character.findUnique({ where: { id: characterId } }),
-  ]);
+  const character = await prisma.character.findUnique({
+    where: { id: characterId },
+  });
 
   if (!character) {
     throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
-  }
-
-  if (!user.isPro && !character.isFree) {
-    throw new ApiError(
-      403,
-      "PAYWALL_REQUIRED",
-      "Unlock Pro to continue learning all characters.",
-      { paywallRequired: true },
-    );
   }
 
   const progress = await prisma.userCharacterProgress.findUnique({

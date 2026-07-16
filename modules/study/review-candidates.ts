@@ -30,7 +30,6 @@ export function reviewCandidateWhere(input: {
   return {
     userId: input.userId,
     status: { in: reviewStatuses },
-    character: input.isPro ? undefined : { isFree: true },
   };
 }
 

@@ -1,6 +1,13 @@
 import { CharacterStatus, StudyCardType, StudySessionType } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import {
+  FREE_CHARACTER_LIMIT,
+  FREE_DAILY_NEW_CHARACTER_LIMIT,
+  FREE_UPGRADE_NUDGE_CHARACTER_COUNT,
+  freeDailyNewCharacterGoal,
+  getFreeNewCharacterAllowance,
+} from "@/modules/access/free-tier.service";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
 import {
   findAvailableNewCharactersForCurrentLevel,
@@ -50,10 +57,22 @@ export async function getHome(userId: string) {
   });
   const reviewDeck = selectReviewCandidates(reviewProgress, now, reviewSessionLimit);
 
+  const freeAllowance = user.isPro
+    ? null
+    : await getFreeNewCharacterAllowance(prisma, { userId, studyDate });
+  const dailyNewGoal = user.isPro
+    ? settings.dailyNewCharacterGoal
+    : freeDailyNewCharacterGoal(settings.dailyNewCharacterGoal);
   const availableNewCharacters = await findAvailableNewCharactersForCurrentLevel(prisma, {
     userId,
     isPro: user.isPro,
-    take: settings.dailyNewCharacterGoal,
+    take: user.isPro
+      ? dailyNewGoal
+      : Math.min(
+          dailyNewGoal,
+          freeAllowance?.remainingTotal ?? 0,
+          freeAllowance?.remainingToday ?? 0,
+        ),
   });
 
   const [
@@ -64,6 +83,7 @@ export async function getHome(userId: string) {
     learnedCount,
     accessibleCharacterCount,
     bamboo,
+    freeNewCharacterCompletions,
   ] = await Promise.all([
     prisma.dailyCharacterCompletion.count({ where: { userId, studyDate } }),
     prisma.dailyCharacterCompletion.findMany({
@@ -113,31 +133,40 @@ export async function getHome(userId: string) {
       where: user.isPro ? undefined : { isFree: true },
     }),
     getBambooProgress(userId),
+    prisma.dailyCharacterCompletion.findMany({
+      where: {
+        userId,
+        cardType: StudyCardType.NEW,
+        character: { isFree: true },
+      },
+      distinct: ["characterId"],
+      select: { characterId: true },
+    }),
   ]);
 
   const todayNewLearnedCount = Math.min(
     todayNewCompletions.length,
-    settings.dailyNewCharacterGoal,
+    dailyNewGoal,
   );
   const todayExtraNewCount = Math.max(
-    todayNewCompletions.length - settings.dailyNewCharacterGoal,
+    todayNewCompletions.length - dailyNewGoal,
     0,
   );
   const dailyNewCharacterCount = Math.min(
-    Math.max(settings.dailyNewCharacterGoal - todayNewLearnedCount, 0),
+    Math.max(dailyNewGoal - todayNewLearnedCount, 0),
     availableNewCharacters.length,
   );
   const totalCards = reviewDeck.length + dailyNewCharacterCount;
   const todayProgressTotal =
-    latestDailySession?.totalCards ?? settings.dailyNewCharacterGoal;
+    latestDailySession?.totalCards ?? dailyNewGoal;
   const isTodayComplete =
-    todayNewLearnedCount >= settings.dailyNewCharacterGoal ||
+    todayNewLearnedCount >= dailyNewGoal ||
     latestDailySession?.completedAt != null;
   const suggestedPrimaryAction = isTodayComplete
     ? "REVIEW_AGAIN_OR_LEARN_MORE"
     : dailyNewCharacterCount > 0 || todayProgressTotal > 0
       ? "START_LEARNING"
-      : user.isPro || reviewDeck.length === 0
+      : user.isPro || reviewDeck.length === 0 || freeAllowance?.remainingToday === 0
         ? "DONE"
         : "PAYWALL";
   const currentSectionProgress = (await getSectionsForUser(userId)).find(
@@ -155,7 +184,7 @@ export async function getHome(userId: string) {
   );
   const plannedNewCharacters = availableNewCharacters
     .filter((character) => !completedNewCharacterIds.has(character.id))
-    .slice(0, Math.max(settings.dailyNewCharacterGoal - todayNewCompletions.length, 0))
+    .slice(0, Math.max(dailyNewGoal - todayNewCompletions.length, 0))
     .map((character) =>
       serializeCharacterSummary(character, { status: CharacterStatus.NEW }),
     );
@@ -165,7 +194,7 @@ export async function getHome(userId: string) {
   ];
 
   return {
-    todayNewGoal: settings.dailyNewCharacterGoal,
+    todayNewGoal: dailyNewGoal,
     todayNewLearnedCount,
     todayExtraNewLearnedCount: todayExtraNewCount,
     todayNewCharacters,
@@ -191,6 +220,15 @@ export async function getHome(userId: string) {
     nextSectionName: nextSection?.name ?? null,
     sealBookPreview,
     isPro: user.isPro,
+    freeCharactersLearned: freeNewCharacterCompletions.length,
+    freeCharacterLimit: FREE_CHARACTER_LIMIT,
+    dailyFreeNewCharacterLimit: FREE_DAILY_NEW_CHARACTER_LIMIT,
+    isFreeDailyNewLimitReached:
+      !user.isPro && (freeAllowance?.remainingToday ?? 0) === 0,
+    shouldShowUpgradeNudge:
+      !user.isPro &&
+      freeNewCharacterCompletions.length >= FREE_UPGRADE_NUDGE_CHARACTER_COUNT &&
+      freeNewCharacterCompletions.length < FREE_CHARACTER_LIMIT,
     onboardingCompleted: user.onboardingCompleted,
     currentStreak: user.currentStreak,
     longestStreak: user.longestStreak,

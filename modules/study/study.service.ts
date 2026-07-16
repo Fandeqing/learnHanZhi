@@ -8,6 +8,10 @@ import {
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import {
+  getFreeNewCharacterAllowance,
+  freeDailyNewCharacterGoal,
+} from "@/modules/access/free-tier.service";
 import { ensureUserSettings } from "@/modules/settings/settings.service";
 import {
   findAvailableNewCharactersForCurrentLevel,
@@ -84,8 +88,11 @@ export async function createDailyStudySession(userId: string) {
       cardType: StudyCardType.NEW,
     },
   });
+  const dailyNewGoal = user.isPro
+    ? settings.dailyNewCharacterGoal
+    : freeDailyNewCharacterGoal(settings.dailyNewCharacterGoal);
   const remainingNewGoal = Math.max(
-    settings.dailyNewCharacterGoal - completedNewTodayCount,
+    dailyNewGoal - completedNewTodayCount,
     0,
   );
 
@@ -94,10 +101,19 @@ export async function createDailyStudySession(userId: string) {
   }
 
   const session = await prisma.$transaction(async (tx) => {
+    const freeAllowance = user.isPro
+      ? null
+      : await getFreeNewCharacterAllowance(tx, { userId, studyDate });
     const newCharacters = await findAvailableNewCharactersForCurrentLevel(tx, {
       userId,
       isPro: user.isPro,
-      take: remainingNewGoal,
+      take: user.isPro
+        ? remainingNewGoal
+        : Math.min(
+            remainingNewGoal,
+            freeAllowance?.remainingTotal ?? 0,
+            freeAllowance?.remainingToday ?? 0,
+          ),
     });
 
     if (!user.isPro && newCharacters.length === 0) {
@@ -218,6 +234,27 @@ export async function createLearnMoreSession(
     throw new ApiError(409, "CHARACTER_ALREADY_LEARNED", "Character is already learned.");
   }
 
+  if (targetCharacter && !targetProgress && !user.isPro) {
+    const allowance = await getFreeNewCharacterAllowance(prisma, {
+      userId,
+      studyDate: toStudyDate(new Date(), settings.studyTimeZone),
+    });
+
+    if (allowance.remainingTotal === 0) {
+      return {
+        paywallRequired: true,
+        message: "Your first 30 characters are complete. Unlock Pro to keep learning new characters.",
+      };
+    }
+
+    if (allowance.remainingToday === 0) {
+      return {
+        paywallRequired: true,
+        message: "You've reached today's 10 free new characters. Unlock Pro to keep learning today.",
+      };
+    }
+  }
+
   const sectionId = targetCharacter?.sectionId ?? parsed.sectionId ?? settings.currentSectionId;
 
   if (!sectionId) {
@@ -225,8 +262,37 @@ export async function createLearnMoreSession(
   }
 
   await assertSectionUnlocked(userId, sectionId);
+  const studyDate = toStudyDate(new Date(), settings.studyTimeZone);
+
+  if (!user.isPro && !targetCharacter) {
+    const allowance = await getFreeNewCharacterAllowance(prisma, {
+      userId,
+      studyDate,
+    });
+
+    if (allowance.remainingTotal === 0 || allowance.remainingToday === 0) {
+      return {
+        paywallRequired: true,
+        message:
+          allowance.remainingTotal === 0
+            ? "Your first 30 characters are complete. Unlock Pro to keep learning new characters."
+            : "You've reached today's 10 free new characters. Unlock Pro to keep learning today.",
+      };
+    }
+  }
 
   const session = await prisma.$transaction(async (tx) => {
+    const freeAllowance = user.isPro
+      ? null
+      : await getFreeNewCharacterAllowance(tx, { userId, studyDate });
+    const take = user.isPro
+      ? count
+      : Math.min(
+          count,
+          freeAllowance?.remainingTotal ?? 0,
+          freeAllowance?.remainingToday ?? 0,
+        );
+
     const newCharacters = targetCharacter
       ? [targetCharacter]
       : parsed.sectionId
@@ -234,12 +300,12 @@ export async function createLearnMoreSession(
             userId,
             sectionId,
             isPro: user.isPro,
-            take: count,
+            take,
           })
         : await findAvailableNewCharactersForCurrentLevel(tx, {
             userId,
             isPro: user.isPro,
-            take: count,
+            take,
           });
 
     if (!user.isPro && newCharacters.length === 0) {
@@ -342,10 +408,7 @@ export async function createPracticeAgainSession(
   input: z.infer<typeof practiceAgainSchema> = {},
 ) {
   const { count = 10, sessionId } = practiceAgainSchema.parse(input);
-  const [user, settings] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
-    ensureUserSettings(userId),
-  ]);
+  const settings = await ensureUserSettings(userId);
   const studyDate = toStudyDate(new Date(), settings.studyTimeZone);
 
   if (sessionId) {
@@ -380,7 +443,6 @@ export async function createPracticeAgainSession(
       where: {
         userId,
         studyDate,
-        character: user.isPro ? undefined : { isFree: true },
       },
       orderBy: { createdAt: "desc" },
       include: { character: true },
@@ -395,7 +457,6 @@ export async function createPracticeAgainSession(
           userId,
           status: { in: reviewStatuses },
           characterId: { notIn: characterIds },
-          character: user.isPro ? undefined : { isFree: true },
         },
         orderBy: [{ lastReviewedAt: "desc" }, { updatedAt: "desc" }],
         take: count - characterIds.length,
@@ -918,8 +979,7 @@ export async function completeStudySession(userId: string, sessionId: string) {
 }
 
 export async function createManualReviewSession(userId: string, characterId: string) {
-  const [user, character, progress] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: userId } }),
+  const [character, progress] = await Promise.all([
     prisma.character.findUnique({ where: { id: characterId } }),
     prisma.userCharacterProgress.findUnique({
       where: {
@@ -933,15 +993,6 @@ export async function createManualReviewSession(userId: string, characterId: str
 
   if (!character) {
     throw new ApiError(404, "CHARACTER_NOT_FOUND", "Character not found.");
-  }
-
-  if (!user.isPro && !character.isFree) {
-    throw new ApiError(
-      403,
-      "PAYWALL_REQUIRED",
-      "Unlock Pro to continue learning all characters.",
-      { paywallRequired: true },
-    );
   }
 
   if (!progress || progress.status === CharacterStatus.NEW) {
