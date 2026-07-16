@@ -59,10 +59,17 @@ export async function getHome(userId: string) {
 
   const freeAllowance = user.isPro
     ? null
-    : await getFreeNewCharacterAllowance(prisma, { userId, studyDate });
+    : await getFreeNewCharacterAllowance(prisma, {
+        userId,
+        studyDate,
+        studyTimeZone: settings.studyTimeZone,
+      });
   const dailyNewGoal = user.isPro
     ? settings.dailyNewCharacterGoal
-    : freeDailyNewCharacterGoal(settings.dailyNewCharacterGoal);
+    : freeDailyNewCharacterGoal(
+        settings.dailyNewCharacterGoal,
+        freeAllowance?.dailyLimit ?? FREE_DAILY_NEW_CHARACTER_LIMIT,
+      );
   const availableNewCharacters = await findAvailableNewCharactersForCurrentLevel(prisma, {
     userId,
     isPro: user.isPro,
@@ -222,7 +229,8 @@ export async function getHome(userId: string) {
     isPro: user.isPro,
     freeCharactersLearned: freeNewCharacterCompletions.length,
     freeCharacterLimit: FREE_CHARACTER_LIMIT,
-    dailyFreeNewCharacterLimit: FREE_DAILY_NEW_CHARACTER_LIMIT,
+    dailyFreeNewCharacterLimit:
+      freeAllowance?.dailyLimit ?? FREE_DAILY_NEW_CHARACTER_LIMIT,
     isFreeDailyNewLimitReached:
       !user.isPro && (freeAllowance?.remainingToday ?? 0) === 0,
     shouldShowUpgradeNudge:

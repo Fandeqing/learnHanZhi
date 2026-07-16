@@ -88,9 +88,19 @@ export async function createDailyStudySession(userId: string) {
       cardType: StudyCardType.NEW,
     },
   });
+  const initialFreeAllowance = user.isPro
+    ? null
+    : await getFreeNewCharacterAllowance(prisma, {
+        userId,
+        studyDate,
+        studyTimeZone: settings.studyTimeZone,
+      });
   const dailyNewGoal = user.isPro
     ? settings.dailyNewCharacterGoal
-    : freeDailyNewCharacterGoal(settings.dailyNewCharacterGoal);
+    : freeDailyNewCharacterGoal(
+        settings.dailyNewCharacterGoal,
+        initialFreeAllowance?.dailyLimit ?? 10,
+      );
   const remainingNewGoal = Math.max(
     dailyNewGoal - completedNewTodayCount,
     0,
@@ -103,7 +113,11 @@ export async function createDailyStudySession(userId: string) {
   const session = await prisma.$transaction(async (tx) => {
     const freeAllowance = user.isPro
       ? null
-      : await getFreeNewCharacterAllowance(tx, { userId, studyDate });
+      : await getFreeNewCharacterAllowance(tx, {
+          userId,
+          studyDate,
+          studyTimeZone: settings.studyTimeZone,
+        });
     const newCharacters = await findAvailableNewCharactersForCurrentLevel(tx, {
       userId,
       isPro: user.isPro,
@@ -238,6 +252,7 @@ export async function createLearnMoreSession(
     const allowance = await getFreeNewCharacterAllowance(prisma, {
       userId,
       studyDate: toStudyDate(new Date(), settings.studyTimeZone),
+      studyTimeZone: settings.studyTimeZone,
     });
 
     if (allowance.remainingTotal === 0) {
@@ -250,7 +265,7 @@ export async function createLearnMoreSession(
     if (allowance.remainingToday === 0) {
       return {
         paywallRequired: true,
-        message: "You've reached today's 10 free new characters. Unlock Pro to keep learning today.",
+        message: `You've reached today's ${allowance.dailyLimit} free new characters. Unlock Pro to keep learning today.`,
       };
     }
   }
@@ -268,6 +283,7 @@ export async function createLearnMoreSession(
     const allowance = await getFreeNewCharacterAllowance(prisma, {
       userId,
       studyDate,
+      studyTimeZone: settings.studyTimeZone,
     });
 
     if (allowance.remainingTotal === 0 || allowance.remainingToday === 0) {
@@ -276,7 +292,7 @@ export async function createLearnMoreSession(
         message:
           allowance.remainingTotal === 0
             ? "Your first 30 characters are complete. Unlock Pro to keep learning new characters."
-            : "You've reached today's 10 free new characters. Unlock Pro to keep learning today.",
+            : `You've reached today's ${allowance.dailyLimit} free new characters. Unlock Pro to keep learning today.`,
       };
     }
   }
@@ -284,7 +300,11 @@ export async function createLearnMoreSession(
   const session = await prisma.$transaction(async (tx) => {
     const freeAllowance = user.isPro
       ? null
-      : await getFreeNewCharacterAllowance(tx, { userId, studyDate });
+      : await getFreeNewCharacterAllowance(tx, {
+          userId,
+          studyDate,
+          studyTimeZone: settings.studyTimeZone,
+        });
     const take = user.isPro
       ? count
       : Math.min(
