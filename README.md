@@ -16,6 +16,15 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Apple Sign In
+
+Set `APPLE_BUNDLE_ID` in each backend environment before enabling Sign in with Apple:
+
+- Staging: `com.deqingfan.learnHanZhiIos.staging`
+- Production: `com.deqingfan.learnHanZhiIos`
+
+The iOS target includes the Sign in with Apple entitlement. Also enable the same capability for both App IDs in Apple Developer and regenerate the provisioning profiles before shipping.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
