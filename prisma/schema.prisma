@@ -47,6 +47,11 @@ enum PurchaseStatus {
   PENDING
 }
 
+enum PurchaseEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
 model User {
   id                           String                  @id @default(uuid()) @db.Uuid
   deviceId                     String                  @unique
@@ -227,6 +232,7 @@ model Purchase {
   productId                String
   transactionId            String           @unique
   originalTransactionId    String
+  environment              PurchaseEnvironment @default(PRODUCTION)
   status                   PurchaseStatus   @default(PENDING)
   purchasedAt              DateTime?        @db.Timestamptz(6)
   revokedAt                DateTime?        @db.Timestamptz(6)

@@ -1,7 +1,16 @@
-import { PurchasePlatform, PurchaseStatus } from "@prisma/client";
+import {
+  PurchaseEnvironment,
+  PurchasePlatform,
+  PurchaseStatus,
+} from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import {
+  fetchVerifiedLifetimeProTransaction,
+  LIFETIME_PRO_PRODUCT_ID,
+  type VerifiedLifetimeProTransaction,
+} from "@/modules/purchases/apple-store.service";
 
 export const iosPurchaseVerifySchema = z.object({
   productId: z.string().trim().min(1, "productId is required."),
@@ -25,88 +34,82 @@ export async function verifyIosPurchase(
 ) {
   const data = iosPurchaseVerifySchema.parse(input);
 
-  if (data.productId !== "lifetime_pro") {
+  if (data.productId !== LIFETIME_PRO_PRODUCT_ID) {
     throw new ApiError(400, "UNSUPPORTED_PRODUCT", "Unsupported productId.");
   }
 
-  if (!isAppleServerApiConfigured()) {
-    throw new ApiError(
-      501,
-      "APPLE_IAP_VERIFICATION_NOT_CONFIGURED",
-      "Apple App Store Server API verification is not configured. Purchase was not applied.",
-    );
-  }
-
-  void userId;
-  throw new ApiError(
-    501,
-    "APPLE_IAP_VERIFICATION_NOT_IMPLEMENTED",
-    "Apple App Store Server API verification is not implemented yet.",
+  const transaction = await fetchVerifiedLifetimeProTransaction(
+    data.transactionId,
+    {
+      transactionId: data.transactionId,
+      originalTransactionId: data.originalTransactionId,
+    },
   );
+  return reconcileVerifiedLifetimeProPurchase(userId, transaction);
 }
 
 export async function restoreIosPurchase(
   userId: string,
   input: z.infer<typeof iosPurchaseRestoreSchema>,
 ) {
-  iosPurchaseRestoreSchema.parse(input);
-
-  if (!isAppleServerApiConfigured()) {
-    throw new ApiError(
-      501,
-      "APPLE_IAP_VERIFICATION_NOT_CONFIGURED",
-      "Apple restore purchase verification is not configured. Entitlement was not changed.",
-    );
-  }
-
-  void userId;
-  throw new ApiError(
-    501,
-    "APPLE_RESTORE_NOT_IMPLEMENTED",
-    "Apple restore purchase verification is not implemented yet.",
+  const data = iosPurchaseRestoreSchema.parse(input);
+  const transaction = await fetchVerifiedLifetimeProTransaction(
+    data.originalTransactionId,
+    { originalTransactionId: data.originalTransactionId },
   );
-}
-
-function isAppleServerApiConfigured() {
-  return Boolean(
-    process.env.APPLE_BUNDLE_ID &&
-      process.env.APPLE_ISSUER_ID &&
-      process.env.APPLE_KEY_ID &&
-      process.env.APPLE_PRIVATE_KEY,
-  );
+  return reconcileVerifiedLifetimeProPurchase(userId, transaction);
 }
 
 export async function applyVerifiedLifetimeProPurchase(
   userId: string,
-  data: z.infer<typeof iosPurchaseVerifySchema>,
+  data: VerifiedLifetimeProTransaction,
 ) {
-  const existingPurchase = await prisma.purchase.findUnique({
-    where: { transactionId: data.transactionId },
-  });
-
-  if (existingPurchase) {
-    throw new ApiError(409, "DUPLICATE_TRANSACTION", "transactionId already exists.");
-  }
-
   return prisma.$transaction(async (tx) => {
-    const now = new Date();
-    const purchase = await tx.purchase.create({
-      data: {
-        userId,
-        platform: PurchasePlatform.IOS,
-        productId: data.productId,
-        transactionId: data.transactionId,
-        originalTransactionId: data.originalTransactionId,
-        status: PurchaseStatus.ACTIVE,
-        purchasedAt: now,
-      },
+    const existingPurchase = await tx.purchase.findUnique({
+      where: { transactionId: data.transactionId },
     });
+    const environment = purchaseEnvironment(data);
+
+    if (
+      existingPurchase &&
+      (existingPurchase.productId !== data.productId ||
+        existingPurchase.originalTransactionId !== data.originalTransactionId ||
+        existingPurchase.environment !== environment)
+    ) {
+      throw new ApiError(
+        409,
+        "APPLE_TRANSACTION_CONFLICT",
+        "The verified transaction conflicts with an existing purchase.",
+      );
+    }
+
+    const purchase = existingPurchase
+      ? await tx.purchase.update({
+          where: { id: existingPurchase.id },
+          data: {
+            status: PurchaseStatus.ACTIVE,
+            purchasedAt: data.purchasedAt,
+            revokedAt: null,
+          },
+        })
+      : await tx.purchase.create({
+          data: {
+            userId,
+            platform: PurchasePlatform.IOS,
+            productId: data.productId,
+            transactionId: data.transactionId,
+            originalTransactionId: data.originalTransactionId,
+            environment,
+            status: PurchaseStatus.ACTIVE,
+            purchasedAt: data.purchasedAt,
+          },
+        });
 
     const user = await tx.user.update({
       where: { id: userId },
       data: {
         isPro: true,
-        proPurchasedAt: now,
+        proPurchasedAt: data.purchasedAt,
         appleOriginalTransactionId: data.originalTransactionId,
         appleProductId: data.productId,
       },
@@ -124,4 +127,72 @@ export async function applyVerifiedLifetimeProPurchase(
       user,
     };
   });
+}
+
+async function reconcileVerifiedLifetimeProPurchase(
+  userId: string,
+  transaction: VerifiedLifetimeProTransaction,
+) {
+  if (transaction.revokedAt) {
+    await applyRevokedLifetimeProPurchase(userId, transaction);
+    throw new ApiError(
+      403,
+      "APPLE_PURCHASE_REVOKED",
+      "Apple has refunded or revoked this purchase.",
+    );
+  }
+
+  return applyVerifiedLifetimeProPurchase(userId, transaction);
+}
+
+async function applyRevokedLifetimeProPurchase(
+  userId: string,
+  data: VerifiedLifetimeProTransaction,
+) {
+  return prisma.$transaction(async (tx) => {
+    const existingPurchase = await tx.purchase.findUnique({
+      where: { transactionId: data.transactionId },
+    });
+    const environment = purchaseEnvironment(data);
+
+    if (existingPurchase) {
+      await tx.purchase.update({
+        where: { id: existingPurchase.id },
+        data: {
+          status: PurchaseStatus.REVOKED,
+          revokedAt: data.revokedAt,
+        },
+      });
+    } else {
+      await tx.purchase.create({
+        data: {
+          userId,
+          platform: PurchasePlatform.IOS,
+          productId: data.productId,
+          transactionId: data.transactionId,
+          originalTransactionId: data.originalTransactionId,
+          environment,
+          status: PurchaseStatus.REVOKED,
+          purchasedAt: data.purchasedAt,
+          revokedAt: data.revokedAt,
+        },
+      });
+    }
+
+    await tx.user.updateMany({
+      where: {
+        appleOriginalTransactionId: data.originalTransactionId,
+      },
+      data: {
+        isPro: false,
+        proPurchasedAt: null,
+      },
+    });
+  });
+}
+
+function purchaseEnvironment(data: VerifiedLifetimeProTransaction) {
+  return data.environment === "Sandbox"
+    ? PurchaseEnvironment.SANDBOX
+    : PurchaseEnvironment.PRODUCTION;
 }

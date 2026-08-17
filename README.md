@@ -23,6 +23,25 @@ Set `APPLE_BUNDLE_ID` in each backend environment before enabling Sign in with A
 - Staging: `com.deqingfan.learnHanZhiIos.staging`
 - Production: `com.deqingfan.learnHanZhiIos`
 
+## Apple in-app purchase verification
+
+The iOS app uses the non-consumable product ID `lifetime_pro`. Configure these
+server-only variables in Railway for App Store Server API verification:
+
+```text
+APPLE_BUNDLE_ID=com.deqingfan.learnHanZhiIos
+APPLE_APP_ID=<numeric App Store app ID>
+APPLE_PRODUCT_ID=lifetime_pro
+APPLE_ISSUER_ID=<In-App Purchase issuer ID>
+APPLE_KEY_ID=<In-App Purchase key ID>
+APPLE_PRIVATE_KEY=<contents of the downloaded .p8 key>
+```
+
+`APPLE_PRIVATE_KEY` may contain real line breaks, escaped `\n` characters, or
+the base64-encoded contents of the `.p8` file. TestFlight transactions are
+looked up in Apple's sandbox after a production lookup returns transaction not
+found. Production and sandbox purchases are recorded separately.
+
 The iOS target includes the Sign in with Apple entitlement. Also enable the same capability for both App IDs in Apple Developer and regenerate the provisioning profiles before shipping.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.

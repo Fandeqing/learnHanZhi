@@ -5,6 +5,8 @@ import {
   restoreIosPurchase,
 } from "@/modules/purchases/purchase.service";
 
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
   try {
     const user = await requireUser(request);
