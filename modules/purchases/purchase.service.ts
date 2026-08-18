@@ -29,6 +29,16 @@ export const iosPurchaseRestoreSchema = z.object({
     .min(1, "originalTransactionId is required."),
 });
 
+export function assertApplePurchaseAccount(appleSubject: string | null) {
+  if (!appleSubject) {
+    throw new ApiError(
+      403,
+      "APPLE_ACCOUNT_REQUIRED",
+      "Sign in with Apple before purchasing or restoring Lifetime Pro.",
+    );
+  }
+}
+
 export function assertTransactionOwnership(
   currentUserId: string,
   existingOwnerId: string | null,
@@ -109,6 +119,7 @@ export async function applyVerifiedLifetimeProPurchase(
     const currentAppleSubjectHash = currentUser.appleSubject
       ? hashAppleSubject(currentUser.appleSubject)
       : null;
+    assertApplePurchaseAccount(currentUser.appleSubject);
     const existingPurchase = await tx.purchase.findUnique({
       where: { transactionId: data.transactionId },
     });
@@ -226,6 +237,7 @@ async function applyRevokedLifetimeProPurchase(
     const currentAppleSubjectHash = currentUser.appleSubject
       ? hashAppleSubject(currentUser.appleSubject)
       : null;
+    assertApplePurchaseAccount(currentUser.appleSubject);
     const existingPurchase = await tx.purchase.findUnique({
       where: { transactionId: data.transactionId },
     });

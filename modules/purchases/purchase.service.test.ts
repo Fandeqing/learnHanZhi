@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-error";
-import { assertTransactionOwnership } from "./purchase.service";
+import {
+  assertApplePurchaseAccount,
+  assertTransactionOwnership,
+} from "./purchase.service";
+
+describe("assertApplePurchaseAccount", () => {
+  it("requires Sign in with Apple for purchase verification", () => {
+    expect(() => assertApplePurchaseAccount(null)).toThrow(ApiError);
+    expect(() => assertApplePurchaseAccount("apple-subject")).not.toThrow();
+  });
+});
 
 describe("assertTransactionOwnership", () => {
   it("accepts a new transaction bound to the current user", () => {
