@@ -3,6 +3,7 @@ import { CharacterStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
+import { createSessionToken } from "@/lib/session-token";
 
 const appleIdentitySchema = z.object({
   identityToken: z.string().trim().min(1, "identityToken is required."),
@@ -15,7 +16,7 @@ type AppleJwk = JsonWebKey & { kid?: string; use?: string };
 let appleKeys: AppleJwk[] | null = null;
 let appleKeysExpiresAt = 0;
 
-export async function linkAppleAccount(userId: string, rawInput: unknown) {
+export async function linkAppleAccount(userId: string, deviceId: string, rawInput: unknown) {
   const { identityToken } = appleIdentitySchema.parse(rawInput);
   const appleSubject = await verifyAppleIdentityToken(identityToken);
 
@@ -29,7 +30,7 @@ export async function linkAppleAccount(userId: string, rawInput: unknown) {
       data: { appleSubject },
       include: { settings: true },
     });
-    return { user, merged: false };
+    return { user, merged: false, sessionToken: createSessionToken(user.id, deviceId) };
   }
 
   return prisma.$transaction(async (tx) => {
@@ -40,7 +41,6 @@ export async function linkAppleAccount(userId: string, rawInput: unknown) {
     const user = await tx.user.update({
       where: { id: existingUser.id },
       data: {
-        deviceId: currentUser.deviceId,
         isPro: existingUser.isPro || currentUser.isPro,
         proPurchasedAt: earliestDate(existingUser.proPurchasedAt, currentUser.proPurchasedAt),
         appleOriginalTransactionId:
@@ -55,7 +55,7 @@ export async function linkAppleAccount(userId: string, rawInput: unknown) {
       include: { settings: true },
     });
 
-    return { user, merged: true };
+    return { user, merged: true, sessionToken: createSessionToken(user.id, deviceId) };
   });
 }
 
@@ -120,6 +120,7 @@ async function mergeUserData(tx: Prisma.TransactionClient, sourceUserId: string,
   await tx.studySessionCard.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.studySession.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.purchase.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
+  await tx.userDevice.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.userSetting.deleteMany({ where: { userId: sourceUserId } });
 }
 

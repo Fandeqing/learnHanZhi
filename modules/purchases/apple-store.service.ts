@@ -8,6 +8,7 @@ import {
   SignedDataVerifier,
   Type,
   type JWSTransactionDecodedPayload,
+  type ResponseBodyV2DecodedPayload,
 } from "@apple/app-store-server-library";
 import { ApiError } from "@/lib/api-error";
 
@@ -20,6 +21,7 @@ export type VerifiedLifetimeProTransaction = {
   environment: Environment.PRODUCTION | Environment.SANDBOX;
   purchasedAt: Date;
   revokedAt: Date | null;
+  appAccountToken: string | null;
 };
 
 type ExpectedTransaction = {
@@ -123,6 +125,54 @@ export async function fetchVerifiedLifetimeProTransaction(
   );
 }
 
+export async function decodeAppStoreServerNotification(
+  signedPayload: string,
+): Promise<{
+  notification: ResponseBodyV2DecodedPayload;
+  transaction: VerifiedLifetimeProTransaction | null;
+}> {
+  const configuration = getAppleIapConfiguration();
+
+  for (const environment of [Environment.PRODUCTION, Environment.SANDBOX] as const) {
+    try {
+      const verifier = new SignedDataVerifier(
+        await loadAppleRootCertificates(),
+        true,
+        environment,
+        configuration.bundleId,
+        environment === Environment.PRODUCTION ? configuration.appAppleId : undefined,
+      );
+      const notification = await verifier.verifyAndDecodeNotification(signedPayload);
+      const signedTransaction = notification.data?.signedTransactionInfo;
+      if (!signedTransaction) return { notification, transaction: null };
+      const decoded = await verifier.verifyAndDecodeTransaction(signedTransaction);
+      return {
+        notification,
+        transaction: validateLifetimeProTransaction(
+          decoded,
+          {},
+          configuration.bundleId,
+          environment,
+        ),
+      };
+    } catch (error) {
+      if (environment === Environment.PRODUCTION) continue;
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(
+        400,
+        "INVALID_APP_STORE_NOTIFICATION",
+        "The App Store notification signature is invalid.",
+      );
+    }
+  }
+
+  throw new ApiError(
+    400,
+    "INVALID_APP_STORE_NOTIFICATION",
+    "The App Store notification signature is invalid.",
+  );
+}
+
 export function validateLifetimeProTransaction(
   transaction: JWSTransactionDecodedPayload,
   expected: ExpectedTransaction,
@@ -169,6 +219,7 @@ export function validateLifetimeProTransaction(
     revokedAt: transaction.revocationDate
       ? new Date(transaction.revocationDate)
       : null,
+    appAccountToken: transaction.appAccountToken ?? null,
   };
 }
 

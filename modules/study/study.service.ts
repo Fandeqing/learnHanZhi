@@ -681,7 +681,7 @@ export async function submitReviewRating(
     }
 
     const isPractice = practiceSessionTypes.has(session.sessionType);
-    const completed = true;
+    const completed = rating !== ReviewRating.AGAIN;
 
     const existingProgress = await tx.userCharacterProgress.findUnique({
       where: {
@@ -822,7 +822,7 @@ export async function submitReviewRating(
     });
 
     let createdDailyCompletion = false;
-    if (card.cardType === StudyCardType.NEW && !existingCompletion) {
+    if (completed && card.cardType === StudyCardType.NEW && !existingCompletion) {
       await tx.dailyCharacterCompletion.create({
         data: {
           userId,
@@ -919,7 +919,9 @@ export async function completeStudySession(userId: string, sessionId: string) {
     throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
   }
 
-  const unfinishedCards = session.cards.filter((card) => !card.reviewedAt);
+  const unfinishedCards = session.cards.filter(
+    (card) => !card.reviewedAt || card.rating === ReviewRating.AGAIN,
+  );
   if (unfinishedCards.length > 0) {
     throw new ApiError(400, "UNFINISHED_CARDS", "All cards must be reviewed first.");
   }

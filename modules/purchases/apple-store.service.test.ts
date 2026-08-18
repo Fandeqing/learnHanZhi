@@ -19,6 +19,7 @@ function transaction(
     transactionId: "2000000000000001",
     originalTransactionId: "2000000000000001",
     purchaseDate: Date.UTC(2026, 7, 17),
+    appAccountToken: "11111111-1111-4111-8111-111111111111",
     ...overrides,
   };
 }
@@ -40,6 +41,7 @@ describe("validateLifetimeProTransaction", () => {
       transactionId: "2000000000000001",
       environment: Environment.SANDBOX,
       revokedAt: null,
+      appAccountToken: "11111111-1111-4111-8111-111111111111",
     });
   });
 

@@ -69,12 +69,36 @@ export async function applyVerifiedLifetimeProPurchase(
       where: { transactionId: data.transactionId },
     });
     const environment = purchaseEnvironment(data);
+    const existingOriginalPurchase = await tx.purchase.findUnique({
+      where: {
+        originalTransactionId_environment: {
+          originalTransactionId: data.originalTransactionId,
+          environment,
+        },
+      },
+    });
+    const ownedPurchase = existingPurchase ?? existingOriginalPurchase;
+
+    if (ownedPurchase && ownedPurchase.userId !== userId) {
+      throw new ApiError(
+        409,
+        "APPLE_TRANSACTION_ALREADY_OWNED",
+        "This App Store transaction is already linked to another account.",
+      );
+    }
+    if (!ownedPurchase && data.appAccountToken !== userId) {
+      throw new ApiError(
+        409,
+        "APPLE_TRANSACTION_OWNERSHIP_MISMATCH",
+        "This App Store transaction was not created for the current account.",
+      );
+    }
 
     if (
-      existingPurchase &&
-      (existingPurchase.productId !== data.productId ||
-        existingPurchase.originalTransactionId !== data.originalTransactionId ||
-        existingPurchase.environment !== environment)
+      ownedPurchase &&
+      (ownedPurchase.productId !== data.productId ||
+        ownedPurchase.originalTransactionId !== data.originalTransactionId ||
+        ownedPurchase.environment !== environment)
     ) {
       throw new ApiError(
         409,
@@ -83,13 +107,15 @@ export async function applyVerifiedLifetimeProPurchase(
       );
     }
 
-    const purchase = existingPurchase
+    const purchase = ownedPurchase
       ? await tx.purchase.update({
-          where: { id: existingPurchase.id },
+          where: { id: ownedPurchase.id },
           data: {
+            transactionId: data.transactionId,
             status: PurchaseStatus.ACTIVE,
             purchasedAt: data.purchasedAt,
             revokedAt: null,
+            appAccountToken: data.appAccountToken ?? ownedPurchase.appAccountToken,
           },
         })
       : await tx.purchase.create({
@@ -99,6 +125,7 @@ export async function applyVerifiedLifetimeProPurchase(
             productId: data.productId,
             transactionId: data.transactionId,
             originalTransactionId: data.originalTransactionId,
+            appAccountToken: data.appAccountToken,
             environment,
             status: PurchaseStatus.ACTIVE,
             purchasedAt: data.purchasedAt,
@@ -161,6 +188,7 @@ async function applyRevokedLifetimeProPurchase(
         data: {
           status: PurchaseStatus.REVOKED,
           revokedAt: data.revokedAt,
+          appAccountToken: data.appAccountToken ?? existingPurchase.appAccountToken,
         },
       });
     } else {
@@ -171,6 +199,7 @@ async function applyRevokedLifetimeProPurchase(
           productId: data.productId,
           transactionId: data.transactionId,
           originalTransactionId: data.originalTransactionId,
+          appAccountToken: data.appAccountToken,
           environment,
           status: PurchaseStatus.REVOKED,
           purchasedAt: data.purchasedAt,
@@ -189,6 +218,32 @@ async function applyRevokedLifetimeProPurchase(
       },
     });
   });
+}
+
+export async function reconcileAppStoreNotification(
+  data: VerifiedLifetimeProTransaction,
+) {
+  const environment = purchaseEnvironment(data);
+  const existingPurchase = await prisma.purchase.findFirst({
+    where: {
+      OR: [
+        { transactionId: data.transactionId },
+        { originalTransactionId: data.originalTransactionId, environment },
+      ],
+    },
+  });
+
+  const ownerId = existingPurchase?.userId ?? data.appAccountToken;
+  if (!ownerId) return { handled: false };
+  const owner = await prisma.user.findUnique({ where: { id: ownerId }, select: { id: true } });
+  if (!owner) return { handled: false };
+
+  if (data.revokedAt) {
+    await applyRevokedLifetimeProPurchase(owner.id, data);
+  } else {
+    await applyVerifiedLifetimeProPurchase(owner.id, data);
+  }
+  return { handled: true };
 }
 
 function purchaseEnvironment(data: VerifiedLifetimeProTransaction) {

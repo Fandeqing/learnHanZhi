@@ -53,93 +53,107 @@ enum PurchaseEnvironment {
 }
 
 model User {
-  id                           String                  @id @default(uuid()) @db.Uuid
-  deviceId                     String                  @unique
-  appleSubject                 String?                 @unique
-  isPro                        Boolean                 @default(false)
-  proPurchasedAt               DateTime?               @db.Timestamptz(6)
-  appleOriginalTransactionId   String?
-  appleProductId               String?
-  onboardingCompleted          Boolean                 @default(false)
-  onboardingCompletedAt        DateTime?               @db.Timestamptz(6)
-  lastStudyDate                DateTime?               @db.Date
-  currentStreak                Int                     @default(0)
-  longestStreak                Int                     @default(0)
-  createdAt                    DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt                    DateTime                @updatedAt @db.Timestamptz(6)
+  id                         String    @id @default(uuid()) @db.Uuid
+  appleSubject               String?   @unique
+  isPro                      Boolean   @default(false)
+  proPurchasedAt             DateTime? @db.Timestamptz(6)
+  appleOriginalTransactionId String?
+  appleProductId             String?
+  onboardingCompleted        Boolean   @default(false)
+  onboardingCompletedAt      DateTime? @db.Timestamptz(6)
+  lastStudyDate              DateTime? @db.Date
+  currentStreak              Int       @default(0)
+  longestStreak              Int       @default(0)
+  createdAt                  DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime  @updatedAt @db.Timestamptz(6)
 
-  settings                     UserSetting?
-  characterProgress            UserCharacterProgress[]
-  studySessions                StudySession[]
-  studySessionCards            StudySessionCard[]
-  dailyCharacterCompletions    DailyCharacterCompletion[]
-  sectionUnlocks               UserSectionUnlock[]
-  purchases                    Purchase[]
+  settings                  UserSetting?
+  characterProgress         UserCharacterProgress[]
+  studySessions             StudySession[]
+  studySessionCards         StudySessionCard[]
+  dailyCharacterCompletions DailyCharacterCompletion[]
+  sectionUnlocks            UserSectionUnlock[]
+  purchases                 Purchase[]
+  devices                   UserDevice[]
 
   @@map("users")
 }
 
-model UserSetting {
-  id                       String   @id @default(uuid()) @db.Uuid
-  userId                   String   @unique @db.Uuid
-  dailyNewCharacterGoal    Int      @default(5)
-  pronunciationEnabled     Boolean  @default(true)
-  autoPlayEnabled          Boolean  @default(false)
-  studyTimeZone            String   @default("UTC")
-  currentSectionId         String?  @db.Uuid
-  createdAt                DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime @updatedAt @db.Timestamptz(6)
+model UserDevice {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  deviceId   String   @unique
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
 
-  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  currentSection           Section? @relation(fields: [currentSectionId], references: [id], onDelete: SetNull)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_devices")
+}
+
+model UserSetting {
+  id                    String   @id @default(uuid()) @db.Uuid
+  userId                String   @unique @db.Uuid
+  dailyNewCharacterGoal Int      @default(5)
+  pronunciationEnabled  Boolean  @default(true)
+  autoPlayEnabled       Boolean  @default(false)
+  studyTimeZone         String   @default("UTC")
+  currentSectionId      String?  @db.Uuid
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(6)
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentSection Section? @relation(fields: [currentSectionId], references: [id], onDelete: SetNull)
 
   @@index([currentSectionId])
   @@map("user_settings")
 }
 
 model Section {
-  id                       String                  @id @default(uuid()) @db.Uuid
-  key                      String                  @unique
-  name                     String
-  description              String?
-  orderIndex               Int                     @unique
-  unlockLearnedRequired    Int                     @default(67)
-  totalCharacters          Int                     @default(100)
-  createdAt                DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime                @updatedAt @db.Timestamptz(6)
+  id                    String   @id @default(uuid()) @db.Uuid
+  key                   String   @unique
+  name                  String
+  description           String?
+  orderIndex            Int      @unique
+  unlockLearnedRequired Int      @default(67)
+  totalCharacters       Int      @default(100)
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(6)
 
-  characters               Character[]
-  userSettings             UserSetting[]
-  characterProgress        UserCharacterProgress[]
-  studySessions            StudySession[]
+  characters                Character[]
+  userSettings              UserSetting[]
+  characterProgress         UserCharacterProgress[]
+  studySessions             StudySession[]
   dailyCharacterCompletions DailyCharacterCompletion[]
-  userUnlocks              UserSectionUnlock[]
+  userUnlocks               UserSectionUnlock[]
 
   @@map("sections")
 }
 
 model Character {
-  id                       String                  @id @default(uuid()) @db.Uuid
-  hanzi                    String                  @unique
-  pinyin                   String
-  meaningEn                String
-  structure                String
-  memoryHook               String
-  exampleWord              String
-  examplePinyin            String
-  exampleMeaningEn         String
-  sectionId                String                  @db.Uuid
-  difficulty               Int                     @default(1)
-  audioText                String
-  orderIndex               Int
-  isFree                   Boolean                 @default(false)
-  createdAt                DateTime                @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime                @updatedAt @db.Timestamptz(6)
+  id               String   @id @default(uuid()) @db.Uuid
+  hanzi            String   @unique
+  pinyin           String
+  meaningEn        String
+  structure        String
+  memoryHook       String
+  exampleWord      String
+  examplePinyin    String
+  exampleMeaningEn String
+  sectionId        String   @db.Uuid
+  difficulty       Int      @default(1)
+  audioText        String
+  orderIndex       Int
+  isFree           Boolean  @default(false)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
-  section                  Section                 @relation(fields: [sectionId], references: [id], onDelete: Restrict)
-  userProgress             UserCharacterProgress[]
-  studySessionCards        StudySessionCard[]
-  dailyCompletions         DailyCharacterCompletion[]
+  section           Section                    @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  userProgress      UserCharacterProgress[]
+  studySessionCards StudySessionCard[]
+  dailyCompletions  DailyCharacterCompletion[]
 
   @@unique([sectionId, orderIndex])
   @@index([sectionId])
@@ -148,23 +162,23 @@ model Character {
 }
 
 model UserCharacterProgress {
-  id                       String          @id @default(uuid()) @db.Uuid
-  userId                   String          @db.Uuid
-  characterId              String          @db.Uuid
-  sectionId                String          @db.Uuid
-  status                   CharacterStatus @default(NEW)
-  lastReviewedAt           DateTime?       @db.Timestamptz(6)
-  nextReviewAt             DateTime?       @db.Timestamptz(6)
-  reviewCount              Int             @default(0)
-  successCount             Int             @default(0)
-  consecutiveSuccessCount  Int             @default(0)
-  isMastered               Boolean         @default(false)
-  createdAt                DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime        @updatedAt @db.Timestamptz(6)
+  id                      String          @id @default(uuid()) @db.Uuid
+  userId                  String          @db.Uuid
+  characterId             String          @db.Uuid
+  sectionId               String          @db.Uuid
+  status                  CharacterStatus @default(NEW)
+  lastReviewedAt          DateTime?       @db.Timestamptz(6)
+  nextReviewAt            DateTime?       @db.Timestamptz(6)
+  reviewCount             Int             @default(0)
+  successCount            Int             @default(0)
+  consecutiveSuccessCount Int             @default(0)
+  isMastered              Boolean         @default(false)
+  createdAt               DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime        @updatedAt @db.Timestamptz(6)
 
-  user                     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  character                Character       @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  section                  Section         @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  section   Section   @relation(fields: [sectionId], references: [id], onDelete: Restrict)
 
   @@unique([userId, characterId])
   @@index([userId, status, nextReviewAt])
@@ -174,22 +188,22 @@ model UserCharacterProgress {
 }
 
 model StudySession {
-  id                       String             @id @default(uuid()) @db.Uuid
-  userId                   String             @db.Uuid
-  sessionType              StudySessionType
-  sectionId                String?            @db.Uuid
-  totalCards               Int                @default(0)
-  newCount                 Int                @default(0)
-  reviewCount              Int                @default(0)
-  completedCount           Int                @default(0)
-  startedAt                DateTime           @default(now()) @db.Timestamptz(6)
-  completedAt              DateTime?          @db.Timestamptz(6)
-  createdAt                DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime           @updatedAt @db.Timestamptz(6)
+  id             String           @id @default(uuid()) @db.Uuid
+  userId         String           @db.Uuid
+  sessionType    StudySessionType
+  sectionId      String?          @db.Uuid
+  totalCards     Int              @default(0)
+  newCount       Int              @default(0)
+  reviewCount    Int              @default(0)
+  completedCount Int              @default(0)
+  startedAt      DateTime         @default(now()) @db.Timestamptz(6)
+  completedAt    DateTime?        @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
 
-  user                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  section                  Section?           @relation(fields: [sectionId], references: [id], onDelete: SetNull)
-  cards                    StudySessionCard[]
+  user                      User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section                   Section?                   @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  cards                     StudySessionCard[]
   dailyCharacterCompletions DailyCharacterCompletion[]
 
   @@index([userId, startedAt])
@@ -199,23 +213,23 @@ model StudySession {
 }
 
 model StudySessionCard {
-  id                       String        @id @default(uuid()) @db.Uuid
-  sessionId                String        @db.Uuid
-  userId                   String        @db.Uuid
-  characterId              String        @db.Uuid
-  cardType                 StudyCardType
-  rating                   ReviewRating?
-  revealed                 Boolean       @default(false)
-  reviewedAt               DateTime?     @db.Timestamptz(6)
-  statusBefore             CharacterStatus?
-  statusAfter              CharacterStatus?
-  becameSeal               Boolean       @default(false)
-  createdAt                DateTime      @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime      @updatedAt @db.Timestamptz(6)
+  id           String           @id @default(uuid()) @db.Uuid
+  sessionId    String           @db.Uuid
+  userId       String           @db.Uuid
+  characterId  String           @db.Uuid
+  cardType     StudyCardType
+  rating       ReviewRating?
+  revealed     Boolean          @default(false)
+  reviewedAt   DateTime?        @db.Timestamptz(6)
+  statusBefore CharacterStatus?
+  statusAfter  CharacterStatus?
+  becameSeal   Boolean          @default(false)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @db.Timestamptz(6)
 
-  session                  StudySession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  user                     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  character                Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  session   StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, characterId])
   @@index([sessionId])
@@ -226,21 +240,23 @@ model StudySessionCard {
 }
 
 model Purchase {
-  id                       String           @id @default(uuid()) @db.Uuid
-  userId                   String           @db.Uuid
-  platform                 PurchasePlatform @default(IOS)
-  productId                String
-  transactionId            String           @unique
-  originalTransactionId    String
-  environment              PurchaseEnvironment @default(PRODUCTION)
-  status                   PurchaseStatus   @default(PENDING)
-  purchasedAt              DateTime?        @db.Timestamptz(6)
-  revokedAt                DateTime?        @db.Timestamptz(6)
-  createdAt                DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime         @updatedAt @db.Timestamptz(6)
+  id                    String              @id @default(uuid()) @db.Uuid
+  userId                String              @db.Uuid
+  platform              PurchasePlatform    @default(IOS)
+  productId             String
+  transactionId         String              @unique
+  originalTransactionId String
+  appAccountToken       String?             @db.Uuid
+  environment           PurchaseEnvironment @default(PRODUCTION)
+  status                PurchaseStatus      @default(PENDING)
+  purchasedAt           DateTime?           @db.Timestamptz(6)
+  revokedAt             DateTime?           @db.Timestamptz(6)
+  createdAt             DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @db.Timestamptz(6)
 
-  user                     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([originalTransactionId, environment])
   @@index([userId, status])
   @@index([originalTransactionId])
   @@map("purchases")
@@ -258,10 +274,10 @@ model DailyCharacterCompletion {
   createdAt   DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt   DateTime      @updatedAt @db.Timestamptz(6)
 
-  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  character   Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
-  section     Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  session     StudySession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character     @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  section   Section       @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  session   StudySession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@unique([userId, characterId, studyDate])
   @@index([userId, studyDate])
@@ -270,17 +286,17 @@ model DailyCharacterCompletion {
 }
 
 model UserSectionUnlock {
-  id              String   @id @default(uuid()) @db.Uuid
-  userId          String   @db.Uuid
-  sectionId       String   @db.Uuid
-  unlockedBySectionId String? @db.Uuid
+  id                   String   @id @default(uuid()) @db.Uuid
+  userId               String   @db.Uuid
+  sectionId            String   @db.Uuid
+  unlockedBySectionId  String?  @db.Uuid
   learnedCountAtUnlock Int?
-  unlockedAt      DateTime @default(now()) @db.Timestamptz(6)
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+  unlockedAt           DateTime @default(now()) @db.Timestamptz(6)
+  createdAt            DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt            DateTime @updatedAt @db.Timestamptz(6)
 
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  section         Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
 
   @@unique([userId, sectionId])
   @@index([userId])

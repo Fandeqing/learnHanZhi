@@ -7,8 +7,8 @@ import {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const user = await createAnonymousUser(anonymousUserSchema.parse(body));
-    return ok(user, { status: 201 });
+    const session = await createAnonymousUser(anonymousUserSchema.parse(body));
+    return ok(session, { status: 201 });
   } catch (error) {
     return handleRouteError(error);
   }

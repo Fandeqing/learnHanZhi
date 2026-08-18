@@ -35,6 +35,7 @@ APPLE_PRODUCT_ID=lifetime_pro
 APPLE_ISSUER_ID=<In-App Purchase issuer ID>
 APPLE_KEY_ID=<In-App Purchase key ID>
 APPLE_PRIVATE_KEY=<contents of the downloaded .p8 key>
+SESSION_TOKEN_SECRET=<at least 32 random characters>
 ```
 
 `APPLE_PRIVATE_KEY` may contain real line breaks, escaped `\n` characters, or

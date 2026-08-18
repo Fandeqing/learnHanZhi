@@ -4,6 +4,7 @@ import {
   getBasicsSection,
   refreshUserSectionUnlocks,
 } from "@/modules/sections/section.service";
+import { createSessionToken } from "@/lib/session-token";
 
 export const anonymousUserSchema = z.object({
   deviceId: z.string().trim().min(1, "deviceId is required."),
@@ -22,24 +23,37 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
   const validStudyTimeZone = normalizeStudyTimeZone(studyTimeZone);
 
   const user = await prisma.$transaction(async (tx) => {
-    const upsertedUser = await tx.user.upsert({
+    const existingDevice = await tx.userDevice.findUnique({
       where: { deviceId },
-      update: {
-        settings: {
-          upsert: {
-            update: { studyTimeZone: validStudyTimeZone },
-            create: {
-              dailyNewCharacterGoal: 5,
-              pronunciationEnabled: true,
-              autoPlayEnabled: false,
-              studyTimeZone: validStudyTimeZone,
-              currentSectionId: basics.id,
+      include: { user: { include: { settings: true } } },
+    });
+    if (existingDevice) {
+      const upsertedUser = await tx.user.update({
+        where: { id: existingDevice.userId },
+        data: {
+          settings: {
+            upsert: {
+              update: { studyTimeZone: validStudyTimeZone },
+              create: {
+                dailyNewCharacterGoal: 5,
+                pronunciationEnabled: true,
+                autoPlayEnabled: false,
+                studyTimeZone: validStudyTimeZone,
+                currentSectionId: basics.id,
+              },
             },
           },
         },
-      },
-      create: {
-        deviceId,
+        include: { settings: true },
+      });
+      await tx.userDevice.update({ where: { id: existingDevice.id }, data: { lastSeenAt: new Date() } });
+      await refreshUserSectionUnlocks(upsertedUser.id, tx);
+      return upsertedUser;
+    }
+
+    const createdUser = await tx.user.create({
+      data: {
+        devices: { create: { deviceId } },
         settings: {
           create: {
             dailyNewCharacterGoal: 5,
@@ -50,16 +64,13 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
           },
         },
       },
-      include: {
-        settings: true,
-      },
+      include: { settings: true },
     });
-
-    await refreshUserSectionUnlocks(upsertedUser.id, tx);
-    return upsertedUser;
+    await refreshUserSectionUnlocks(createdUser.id, tx);
+    return createdUser;
   });
 
-  return user;
+  return { user, sessionToken: createSessionToken(user.id, deviceId) };
 }
 
 function normalizeStudyTimeZone(timeZone?: string) {

@@ -12,16 +12,23 @@ export function freeDailyNewCharacterGoal(goal: number, limit: number) {
   return Math.min(goal, limit);
 }
 
+export function remainingFreeCharacterCount(completedCharacterCount: number) {
+  return Math.max(FREE_CHARACTER_LIMIT - completedCharacterCount, 0);
+}
+
 export async function getFreeNewCharacterAllowance(
   client: Client,
   input: { userId: string; studyDate: Date; studyTimeZone?: string | null },
 ) {
-  const [startedCharacterCount, completedTodayCount, firstFreeCharacter] = await Promise.all([
-    client.userCharacterProgress.count({
+  const [completedFreeCharacters, completedTodayCount, firstFreeCharacter] = await Promise.all([
+    client.dailyCharacterCompletion.findMany({
       where: {
         userId: input.userId,
         character: { isFree: true },
+        cardType: StudyCardType.NEW,
       },
+      distinct: ["characterId"],
+      select: { characterId: true },
     }),
     client.dailyCharacterCompletion.count({
       where: {
@@ -51,10 +58,10 @@ export async function getFreeNewCharacterAllowance(
     : FREE_DAILY_NEW_CHARACTER_LIMIT;
 
   return {
-    startedCharacterCount,
+    completedCharacterCount: completedFreeCharacters.length,
     completedTodayCount,
     dailyLimit,
-    remainingTotal: Math.max(FREE_CHARACTER_LIMIT - startedCharacterCount, 0),
+    remainingTotal: remainingFreeCharacterCount(completedFreeCharacters.length),
     remainingToday: Math.max(dailyLimit - completedTodayCount, 0),
   };
 }
