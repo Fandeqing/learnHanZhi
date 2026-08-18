@@ -34,6 +34,7 @@ import {
   reviewStatuses,
   selectReviewCandidates,
 } from "@/modules/study/review-candidates";
+import { completesSessionCard } from "@/modules/study/review-completion";
 
 const practiceSessionTypes = new Set<StudySessionType>([
   StudySessionType.PRACTICE_AGAIN,
@@ -681,7 +682,7 @@ export async function submitReviewRating(
     }
 
     const isPractice = practiceSessionTypes.has(session.sessionType);
-    const completed = rating !== ReviewRating.AGAIN;
+    const completed = completesSessionCard(card.rating, rating);
 
     const existingProgress = await tx.userCharacterProgress.findUnique({
       where: {
@@ -754,7 +755,7 @@ export async function submitReviewRating(
         where: { id: card.id },
         data: {
           rating,
-          reviewedAt: now,
+          reviewedAt: completed ? now : null,
           revealed: true,
           statusBefore: card.statusBefore ?? progress.status,
           statusAfter: updatedProgress.status,
@@ -796,7 +797,7 @@ export async function submitReviewRating(
       where: { id: card.id },
       data: {
         rating,
-        reviewedAt: now,
+        reviewedAt: completed ? now : null,
         revealed: true,
         statusBefore: card.statusBefore ?? progress.status,
         statusAfter: updatedProgress.status,
@@ -919,9 +920,7 @@ export async function completeStudySession(userId: string, sessionId: string) {
     throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
   }
 
-  const unfinishedCards = session.cards.filter(
-    (card) => !card.reviewedAt || card.rating === ReviewRating.AGAIN,
-  );
+  const unfinishedCards = session.cards.filter((card) => !card.reviewedAt);
   if (unfinishedCards.length > 0) {
     throw new ApiError(400, "UNFINISHED_CARDS", "All cards must be reviewed first.");
   }
