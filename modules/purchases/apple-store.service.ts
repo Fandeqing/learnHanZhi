@@ -46,8 +46,24 @@ export async function fetchVerifiedLifetimeProTransaction(
 ): Promise<VerifiedLifetimeProTransaction> {
   const configuration = getAppleIapConfiguration();
 
+  console.info("Apple IAP config", {
+    issuerId: configuration.issuerId,
+    keyId: configuration.keyId,
+    bundleId: configuration.bundleId,
+    productId: configuration.productId,
+    appId: configuration.appAppleId,
+    privateKeyPresent: Boolean(configuration.privateKey),
+    privateKeyStartsCorrectly: configuration.privateKey.includes(
+      "-----BEGIN PRIVATE KEY-----",
+    ),
+    privateKeyEndsCorrectly: configuration.privateKey.includes(
+      "-----END PRIVATE KEY-----",
+    ),
+  });
+
   for (const environment of [Environment.PRODUCTION, Environment.SANDBOX] as const) {
     try {
+      console.info("Apple transaction lookup attempt", { environment });
       const client = new AppStoreServerAPIClient(
         configuration.privateKey,
         configuration.keyId,
@@ -75,6 +91,8 @@ export async function fetchVerifiedLifetimeProTransaction(
         response.signedTransactionInfo,
       );
 
+      console.info("Apple transaction lookup succeeded", { environment });
+
       return validateLifetimeProTransaction(
         decoded,
         expected,
@@ -82,12 +100,20 @@ export async function fetchVerifiedLifetimeProTransaction(
         environment,
       );
     } catch (error) {
-      if (
-        environment === Environment.PRODUCTION &&
-        error instanceof APIException &&
-        error.apiError === APIError.TRANSACTION_ID_NOT_FOUND
-      ) {
-        continue;
+      if (environment === Environment.PRODUCTION && error instanceof APIException) {
+        if (error.apiError === APIError.TRANSACTION_ID_NOT_FOUND) {
+          console.info("Apple production transaction not found; trying sandbox");
+          continue;
+        }
+
+        if (error.httpStatusCode === 401) {
+          console.warn("Apple production authorization failed; testing sandbox", {
+            httpStatusCode: error.httpStatusCode,
+            apiError: error.apiError,
+            errorMessage: error.errorMessage,
+          });
+          continue;
+        }
       }
 
       if (error instanceof ApiError) {
@@ -108,6 +134,11 @@ export async function fetchVerifiedLifetimeProTransaction(
 
       console.error("Apple transaction verification failed", {
         environment,
+        httpStatusCode:
+          error instanceof APIException ? error.httpStatusCode : undefined,
+        apiError: error instanceof APIException ? error.apiError : undefined,
+        errorMessage:
+          error instanceof APIException ? error.errorMessage : undefined,
         error,
       });
       throw new ApiError(
