@@ -46,24 +46,8 @@ export async function fetchVerifiedLifetimeProTransaction(
 ): Promise<VerifiedLifetimeProTransaction> {
   const configuration = getAppleIapConfiguration();
 
-  console.info("Apple IAP config", {
-    issuerId: configuration.issuerId,
-    keyId: configuration.keyId,
-    bundleId: configuration.bundleId,
-    productId: configuration.productId,
-    appId: configuration.appAppleId,
-    privateKeyPresent: Boolean(configuration.privateKey),
-    privateKeyStartsCorrectly: configuration.privateKey.includes(
-      "-----BEGIN PRIVATE KEY-----",
-    ),
-    privateKeyEndsCorrectly: configuration.privateKey.includes(
-      "-----END PRIVATE KEY-----",
-    ),
-  });
-
   for (const environment of [Environment.PRODUCTION, Environment.SANDBOX] as const) {
     try {
-      console.info("Apple transaction lookup attempt", { environment });
       const client = new AppStoreServerAPIClient(
         configuration.privateKey,
         configuration.keyId,
@@ -91,8 +75,6 @@ export async function fetchVerifiedLifetimeProTransaction(
         response.signedTransactionInfo,
       );
 
-      console.info("Apple transaction lookup succeeded", { environment });
-
       return validateLifetimeProTransaction(
         decoded,
         expected,
@@ -100,20 +82,15 @@ export async function fetchVerifiedLifetimeProTransaction(
         environment,
       );
     } catch (error) {
-      if (environment === Environment.PRODUCTION && error instanceof APIException) {
-        if (error.apiError === APIError.TRANSACTION_ID_NOT_FOUND) {
-          console.info("Apple production transaction not found; trying sandbox");
-          continue;
-        }
-
-        if (error.httpStatusCode === 401) {
-          console.warn("Apple production authorization failed; testing sandbox", {
-            httpStatusCode: error.httpStatusCode,
-            apiError: error.apiError,
-            errorMessage: error.errorMessage,
-          });
-          continue;
-        }
+      if (
+        environment === Environment.PRODUCTION &&
+        shouldTrySandboxAfterProductionError(error)
+      ) {
+        console.info("Apple production lookup did not resolve transaction; trying sandbox", {
+          httpStatusCode: error.httpStatusCode,
+          apiError: error.apiError,
+        });
+        continue;
       }
 
       if (error instanceof ApiError) {
@@ -153,6 +130,16 @@ export async function fetchVerifiedLifetimeProTransaction(
     400,
     "APPLE_TRANSACTION_NOT_FOUND",
     "Apple could not find this transaction in production or sandbox.",
+  );
+}
+
+export function shouldTrySandboxAfterProductionError(
+  error: unknown,
+): error is APIException {
+  return (
+    error instanceof APIException &&
+    (error.apiError === APIError.TRANSACTION_ID_NOT_FOUND ||
+      error.httpStatusCode === 401)
   );
 }
 

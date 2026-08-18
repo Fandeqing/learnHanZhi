@@ -1,12 +1,41 @@
-import { Environment, Type, type JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
+import {
+  APIError,
+  APIException,
+  Environment,
+  Type,
+  type JWSTransactionDecodedPayload,
+} from "@apple/app-store-server-library";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-error";
 import {
   LIFETIME_PRO_PRODUCT_ID,
+  shouldTrySandboxAfterProductionError,
   validateLifetimeProTransaction,
 } from "./apple-store.service";
 
 const bundleId = "com.deqingfan.learnHanZhiIos";
+
+describe("shouldTrySandboxAfterProductionError", () => {
+  it("falls back when Apple returns transaction not found", () => {
+    expect(
+      shouldTrySandboxAfterProductionError(
+        new APIException(404, APIError.TRANSACTION_ID_NOT_FOUND),
+      ),
+    ).toBe(true);
+  });
+
+  it("falls back when Apple returns 401 for a sandbox transaction", () => {
+    expect(shouldTrySandboxAfterProductionError(new APIException(401))).toBe(
+      true,
+    );
+  });
+
+  it("does not hide other production failures", () => {
+    expect(shouldTrySandboxAfterProductionError(new APIException(500))).toBe(
+      false,
+    );
+  });
+});
 
 function transaction(
   overrides: Partial<JWSTransactionDecodedPayload> = {},
