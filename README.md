@@ -36,6 +36,8 @@ APPLE_ISSUER_ID=<In-App Purchase issuer ID>
 APPLE_KEY_ID=<In-App Purchase key ID>
 APPLE_PRIVATE_KEY=<contents of the downloaded .p8 key>
 SESSION_TOKEN_SECRET=<at least 32 random characters>
+ADMIN_ENABLED=false
+ADMIN_API_TOKEN=<at least 32 random characters; required only when admin is enabled>
 ```
 
 `APPLE_PRIVATE_KEY` may contain real line breaks, escaped `\n` characters, or

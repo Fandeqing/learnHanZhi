@@ -2,6 +2,7 @@ import { createPublicKey, verify, type JsonWebKey } from "node:crypto";
 import { CharacterStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
+import { hashAppleSubject } from "@/lib/apple-account";
 import { prisma } from "@/lib/db";
 import { createSessionToken } from "@/lib/session-token";
 
@@ -19,6 +20,7 @@ let appleKeysExpiresAt = 0;
 export async function linkAppleAccount(userId: string, deviceId: string, rawInput: unknown) {
   const { identityToken } = appleIdentitySchema.parse(rawInput);
   const appleSubject = await verifyAppleIdentityToken(identityToken);
+  const appleSubjectHash = hashAppleSubject(appleSubject);
 
   const existingUser = await prisma.user.findUnique({
     where: { appleSubject },
@@ -29,6 +31,10 @@ export async function linkAppleAccount(userId: string, deviceId: string, rawInpu
       where: { id: userId },
       data: { appleSubject },
       include: { settings: true },
+    });
+    await prisma.purchase.updateMany({
+      where: { userId: user.id },
+      data: { appleSubjectHash },
     });
     return { user, merged: false, sessionToken: createSessionToken(user.id, deviceId) };
   }
@@ -53,6 +59,10 @@ export async function linkAppleAccount(userId: string, deviceId: string, rawInpu
         ),
       },
       include: { settings: true },
+    });
+    await tx.purchase.updateMany({
+      where: { userId: user.id },
+      data: { appleSubjectHash },
     });
 
     return { user, merged: true, sessionToken: createSessionToken(user.id, deviceId) };
@@ -119,6 +129,7 @@ async function mergeUserData(tx: Prisma.TransactionClient, sourceUserId: string,
 
   await tx.studySessionCard.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.studySession.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
+  await tx.reviewSubmission.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.purchase.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.userDevice.updateMany({ where: { userId: sourceUserId }, data: { userId: targetUserId } });
   await tx.userSetting.deleteMany({ where: { userId: sourceUserId } });

@@ -13,6 +13,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  const [adminToken, setAdminToken] = useState("");
 
   async function importFromFile(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -21,7 +22,6 @@ export default function AdminPage() {
   }
 
   async function importSelectedFile(mode: "upsert" | "replace" = "upsert") {
-
     if (!file) {
       setResult({
         status: 0,
@@ -71,6 +71,7 @@ export default function AdminPage() {
 
     try {
       const headers = new Headers();
+      headers.set("authorization", `Bearer ${adminToken}`);
       if (contentType) {
         headers.set("content-type", contentType);
       }
@@ -152,6 +153,7 @@ export default function AdminPage() {
     try {
       const response = await fetch("/api/admin/user-data/clear", {
         method: "POST",
+        headers: { authorization: `Bearer ${adminToken}` },
       });
       const responseText = await response.text();
 
@@ -191,6 +193,23 @@ export default function AdminPage() {
             table. Existing characters are matched by <code className="text-zinc-200">hanzi</code>.
           </p>
         </header>
+
+        <section className="rounded border border-zinc-800 bg-zinc-900/70 p-4">
+          <label className="block text-sm font-medium text-zinc-200" htmlFor="admin-token">
+            Admin API token
+          </label>
+          <input
+            id="admin-token"
+            type="password"
+            autoComplete="off"
+            value={adminToken}
+            onChange={(event) => setAdminToken(event.target.value)}
+            className="mt-2 h-10 w-full rounded border border-zinc-700 bg-zinc-950 px-3 text-sm text-zinc-100"
+          />
+          <p className="mt-2 text-xs text-zinc-500">
+            The token stays in this browser tab and is sent only in the Authorization header.
+          </p>
+        </section>
 
         <section className="rounded border border-amber-900/60 bg-amber-950/20 p-4">
           <h2 className="text-lg font-semibold text-amber-100">Full Dataset Replacement</h2>

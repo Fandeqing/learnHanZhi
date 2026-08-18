@@ -18,4 +18,16 @@ describe("assertTransactionOwnership", () => {
   it("rejects an unowned transaction without a matching app account token", () => {
     expect(() => assertTransactionOwnership("user-b", null, "user-a")).toThrow(ApiError);
   });
+
+  it("allows an orphaned purchase to be restored by the same Apple account", () => {
+    expect(() =>
+      assertTransactionOwnership("user-b", null, null, "apple-hash", "apple-hash"),
+    ).not.toThrow();
+  });
+
+  it("rejects an orphaned purchase from a different Apple account", () => {
+    expect(() =>
+      assertTransactionOwnership("user-b", null, "user-b", "owner-hash", "other-hash"),
+    ).toThrow(ApiError);
+  });
 });

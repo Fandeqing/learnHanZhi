@@ -75,6 +75,7 @@ model User {
   sectionUnlocks            UserSectionUnlock[]
   purchases                 Purchase[]
   devices                   UserDevice[]
+  reviewSubmissions         ReviewSubmission[]
 
   @@map("users")
 }
@@ -154,6 +155,7 @@ model Character {
   userProgress      UserCharacterProgress[]
   studySessionCards StudySessionCard[]
   dailyCompletions  DailyCharacterCompletion[]
+  reviewSubmissions ReviewSubmission[]
 
   @@unique([sectionId, orderIndex])
   @@index([sectionId])
@@ -205,6 +207,7 @@ model StudySession {
   section                   Section?                   @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   cards                     StudySessionCard[]
   dailyCharacterCompletions DailyCharacterCompletion[]
+  reviewSubmissions         ReviewSubmission[]
 
   @@index([userId, startedAt])
   @@index([sessionType])
@@ -239,14 +242,35 @@ model StudySessionCard {
   @@map("study_session_cards")
 }
 
+model ReviewSubmission {
+  id           String       @id @default(uuid()) @db.Uuid
+  submissionId String       @unique @db.Uuid
+  userId       String       @db.Uuid
+  sessionId    String       @db.Uuid
+  characterId  String       @db.Uuid
+  rating       ReviewRating
+  response     Json?
+  createdAt    DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime     @updatedAt @db.Timestamptz(6)
+
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session   StudySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  character Character    @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@index([userId, sessionId])
+  @@index([sessionId, characterId])
+  @@map("review_submissions")
+}
+
 model Purchase {
   id                    String              @id @default(uuid()) @db.Uuid
-  userId                String              @db.Uuid
+  userId                String?             @db.Uuid
   platform              PurchasePlatform    @default(IOS)
   productId             String
   transactionId         String              @unique
   originalTransactionId String
   appAccountToken       String?             @db.Uuid
+  appleSubjectHash      String?
   environment           PurchaseEnvironment @default(PRODUCTION)
   status                PurchaseStatus      @default(PENDING)
   purchasedAt           DateTime?           @db.Timestamptz(6)
@@ -254,11 +278,12 @@ model Purchase {
   createdAt             DateTime            @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime            @updatedAt @db.Timestamptz(6)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([originalTransactionId, environment])
   @@index([userId, status])
   @@index([originalTransactionId])
+  @@index([appleSubjectHash])
   @@map("purchases")
 }
 

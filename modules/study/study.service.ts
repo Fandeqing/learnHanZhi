@@ -5,6 +5,7 @@ import {
   StudyCardType,
   StudySessionType,
 } from "@prisma/client";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
@@ -57,6 +58,7 @@ export const learnMoreSchema = z.object({
 
 export const reviewRatingSchema = z.object({
   rating: z.nativeEnum(ReviewRating),
+  submissionId: z.string().uuid("submissionId must be a UUID.").optional(),
 });
 
 export const manualReviewSchema = z.object({
@@ -648,38 +650,57 @@ export async function submitReviewRating(
   characterId: string,
   input: z.infer<typeof reviewRatingSchema>,
 ) {
-  const { rating } = reviewRatingSchema.parse(input);
+  const parsedInput = reviewRatingSchema.parse(input);
+  const { rating } = parsedInput;
+  const submissionId = parsedInput.submissionId ?? randomUUID();
   const now = new Date();
   const settings = await ensureUserSettings(userId);
   const studyDate = toStudyDate(now, settings.studyTimeZone);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const card = await tx.studySessionCard.findUnique({
-      where: {
-        sessionId_characterId: {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const existingSubmission = await tx.reviewSubmission.findUnique({
+        where: { submissionId },
+      });
+      if (existingSubmission) {
+        return storedReviewResponse(existingSubmission, {
+          userId,
           sessionId,
           characterId,
+          rating,
+        });
+      }
+
+      const card = await tx.studySessionCard.findUnique({
+        where: {
+          sessionId_characterId: {
+            sessionId,
+            characterId,
+          },
         },
-      },
-    });
+      });
 
-    if (!card || card.userId !== userId) {
-      throw new ApiError(404, "SESSION_CARD_NOT_FOUND", "Study session card not found.");
-    }
+      if (!card || card.userId !== userId) {
+        throw new ApiError(404, "SESSION_CARD_NOT_FOUND", "Study session card not found.");
+      }
 
-    const session = await tx.studySession.findFirst({
-      where: {
-        id: sessionId,
-        userId,
-      },
-      select: {
-        sessionType: true,
-      },
-    });
+      const session = await tx.studySession.findFirst({
+        where: {
+          id: sessionId,
+          userId,
+        },
+        select: {
+          sessionType: true,
+        },
+      });
 
-    if (!session) {
-      throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
-    }
+      if (!session) {
+        throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
+      }
+
+      await tx.reviewSubmission.create({
+        data: { submissionId, userId, sessionId, characterId, rating },
+      });
 
     const isPractice = practiceSessionTypes.has(session.sessionType);
     const completed = completesSessionCard(card.rating, rating);
@@ -763,13 +784,18 @@ export async function submitReviewRating(
         },
       });
 
-      return {
+      const response = serializeReviewResponse({
         card: updatedCard,
         progress: updatedProgress,
         becameSeal,
         createdDailyCompletion: false,
         completed,
-      };
+      });
+      await tx.reviewSubmission.update({
+        where: { submissionId },
+        data: { response },
+      });
+      return response;
     }
 
     const wasSeal =
@@ -844,22 +870,59 @@ export async function submitReviewRating(
 
     await refreshUserSectionUnlocks(userId, tx);
 
-    return {
+    const response = serializeReviewResponse({
       card: updatedCard,
       progress: updatedProgress,
       becameSeal,
       createdDailyCompletion,
       completed,
-    };
-  });
+    });
+    await tx.reviewSubmission.update({
+      where: { submissionId },
+      data: { response },
+    });
+      return response;
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const existingSubmission = await prisma.reviewSubmission.findUnique({
+        where: { submissionId },
+      });
+      if (existingSubmission) {
+        return storedReviewResponse(existingSubmission, {
+          userId,
+          sessionId,
+          characterId,
+          rating,
+        });
+      }
+    }
+    throw error;
+  }
+}
 
+function serializeReviewResponse(result: {
+  card: { rating: ReviewRating | null; reviewedAt: Date | null };
+  progress: {
+    status: CharacterStatus;
+    lastReviewedAt: Date | null;
+    nextReviewAt: Date | null;
+    reviewCount: number;
+    successCount: number;
+    consecutiveSuccessCount: number;
+    isMastered: boolean;
+  };
+  becameSeal: boolean;
+  createdDailyCompletion: boolean;
+  completed: boolean;
+}) {
   return {
     rating: result.card.rating,
-    reviewedAt: result.card.reviewedAt,
+    reviewedAt: result.card.reviewedAt?.toISOString() ?? null,
     progress: {
       status: result.progress.status,
-      lastReviewedAt: result.progress.lastReviewedAt,
-      nextReviewAt: result.progress.nextReviewAt,
+      lastReviewedAt: result.progress.lastReviewedAt?.toISOString() ?? null,
+      nextReviewAt: result.progress.nextReviewAt?.toISOString() ?? null,
       reviewCount: result.progress.reviewCount,
       successCount: result.progress.successCount,
       consecutiveSuccessCount: result.progress.consecutiveSuccessCount,
@@ -869,6 +932,39 @@ export async function submitReviewRating(
     countedForToday: result.createdDailyCompletion,
     completed: result.completed,
   };
+}
+
+function storedReviewResponse(
+  submission: {
+    userId: string;
+    sessionId: string;
+    characterId: string;
+    rating: ReviewRating;
+    response: Prisma.JsonValue | null;
+  },
+  expected: {
+    userId: string;
+    sessionId: string;
+    characterId: string;
+    rating: ReviewRating;
+  },
+) {
+  if (
+    submission.userId !== expected.userId ||
+    submission.sessionId !== expected.sessionId ||
+    submission.characterId !== expected.characterId ||
+    submission.rating !== expected.rating
+  ) {
+    throw new ApiError(
+      409,
+      "SUBMISSION_ID_CONFLICT",
+      "This submissionId was already used for a different review.",
+    );
+  }
+  if (!submission.response) {
+    throw new ApiError(409, "SUBMISSION_IN_PROGRESS", "This review is still being processed.");
+  }
+  return submission.response;
 }
 
 async function updateUserStreak(

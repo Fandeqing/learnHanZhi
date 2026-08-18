@@ -5,6 +5,7 @@ import {
 } from "@prisma/client";
 import { z } from "zod";
 import { ApiError } from "@/lib/api-error";
+import { hashAppleSubject } from "@/lib/apple-account";
 import { prisma } from "@/lib/db";
 import {
   fetchVerifiedLifetimeProTransaction,
@@ -32,6 +33,9 @@ export function assertTransactionOwnership(
   currentUserId: string,
   existingOwnerId: string | null,
   appAccountToken: string | null,
+  existingAppleSubjectHash: string | null = null,
+  currentAppleSubjectHash: string | null = null,
+  hasExistingPurchase = existingOwnerId !== null || existingAppleSubjectHash !== null,
 ) {
   const normalizedUserId = currentUserId.toLowerCase();
   if (existingOwnerId && existingOwnerId.toLowerCase() !== normalizedUserId) {
@@ -41,7 +45,18 @@ export function assertTransactionOwnership(
       "This App Store transaction is already linked to another account.",
     );
   }
-  if (!existingOwnerId && appAccountToken?.toLowerCase() !== normalizedUserId) {
+  if (
+    hasExistingPurchase &&
+    !existingOwnerId &&
+    (!existingAppleSubjectHash || existingAppleSubjectHash !== currentAppleSubjectHash)
+  ) {
+    throw new ApiError(
+      409,
+      "APPLE_TRANSACTION_ALREADY_OWNED",
+      "This App Store transaction is already linked to another account.",
+    );
+  }
+  if (!hasExistingPurchase && appAccountToken?.toLowerCase() !== normalizedUserId) {
     throw new ApiError(
       409,
       "APPLE_TRANSACTION_OWNERSHIP_MISMATCH",
@@ -87,6 +102,13 @@ export async function applyVerifiedLifetimeProPurchase(
   data: VerifiedLifetimeProTransaction,
 ) {
   return prisma.$transaction(async (tx) => {
+    const currentUser = await tx.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { appleSubject: true },
+    });
+    const currentAppleSubjectHash = currentUser.appleSubject
+      ? hashAppleSubject(currentUser.appleSubject)
+      : null;
     const existingPurchase = await tx.purchase.findUnique({
       where: { transactionId: data.transactionId },
     });
@@ -105,6 +127,9 @@ export async function applyVerifiedLifetimeProPurchase(
       userId,
       ownedPurchase?.userId ?? null,
       data.appAccountToken,
+      ownedPurchase?.appleSubjectHash ?? null,
+      currentAppleSubjectHash,
+      Boolean(ownedPurchase),
     );
 
     if (
@@ -124,11 +149,14 @@ export async function applyVerifiedLifetimeProPurchase(
       ? await tx.purchase.update({
           where: { id: ownedPurchase.id },
           data: {
+            userId,
             transactionId: data.transactionId,
             status: PurchaseStatus.ACTIVE,
             purchasedAt: data.purchasedAt,
             revokedAt: null,
             appAccountToken: data.appAccountToken ?? ownedPurchase.appAccountToken,
+            appleSubjectHash:
+              currentAppleSubjectHash ?? ownedPurchase.appleSubjectHash,
           },
         })
       : await tx.purchase.create({
@@ -139,6 +167,7 @@ export async function applyVerifiedLifetimeProPurchase(
             transactionId: data.transactionId,
             originalTransactionId: data.originalTransactionId,
             appAccountToken: data.appAccountToken,
+            appleSubjectHash: currentAppleSubjectHash,
             environment,
             status: PurchaseStatus.ACTIVE,
             purchasedAt: data.purchasedAt,
@@ -190,18 +219,60 @@ async function applyRevokedLifetimeProPurchase(
   data: VerifiedLifetimeProTransaction,
 ) {
   return prisma.$transaction(async (tx) => {
+    const currentUser = await tx.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { appleSubject: true },
+    });
+    const currentAppleSubjectHash = currentUser.appleSubject
+      ? hashAppleSubject(currentUser.appleSubject)
+      : null;
     const existingPurchase = await tx.purchase.findUnique({
       where: { transactionId: data.transactionId },
     });
     const environment = purchaseEnvironment(data);
+    const existingOriginalPurchase = await tx.purchase.findUnique({
+      where: {
+        originalTransactionId_environment: {
+          originalTransactionId: data.originalTransactionId,
+          environment,
+        },
+      },
+    });
+    const ownedPurchase = existingPurchase ?? existingOriginalPurchase;
 
-    if (existingPurchase) {
+    assertTransactionOwnership(
+      userId,
+      ownedPurchase?.userId ?? null,
+      data.appAccountToken,
+      ownedPurchase?.appleSubjectHash ?? null,
+      currentAppleSubjectHash,
+      Boolean(ownedPurchase),
+    );
+
+    if (
+      ownedPurchase &&
+      (ownedPurchase.productId !== data.productId ||
+        ownedPurchase.originalTransactionId !== data.originalTransactionId ||
+        ownedPurchase.environment !== environment)
+    ) {
+      throw new ApiError(
+        409,
+        "APPLE_TRANSACTION_CONFLICT",
+        "The verified transaction conflicts with an existing purchase.",
+      );
+    }
+
+    if (ownedPurchase) {
       await tx.purchase.update({
-        where: { id: existingPurchase.id },
+        where: { id: ownedPurchase.id },
         data: {
+          userId,
+          transactionId: data.transactionId,
           status: PurchaseStatus.REVOKED,
           revokedAt: data.revokedAt,
-          appAccountToken: data.appAccountToken ?? existingPurchase.appAccountToken,
+          appAccountToken: data.appAccountToken ?? ownedPurchase.appAccountToken,
+          appleSubjectHash:
+            currentAppleSubjectHash ?? ownedPurchase.appleSubjectHash,
         },
       });
     } else {
@@ -213,6 +284,7 @@ async function applyRevokedLifetimeProPurchase(
           transactionId: data.transactionId,
           originalTransactionId: data.originalTransactionId,
           appAccountToken: data.appAccountToken,
+          appleSubjectHash: currentAppleSubjectHash,
           environment,
           status: PurchaseStatus.REVOKED,
           purchasedAt: data.purchasedAt,

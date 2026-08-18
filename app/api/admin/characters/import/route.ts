@@ -4,9 +4,11 @@ import {
   type CharacterImportMode,
   importCharactersFromJson,
 } from "@/modules/admin/character-import.service";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export async function POST(request: Request) {
   try {
+    requireAdmin(request);
     const mode = importModeFromRequest(request);
     const contentType = request.headers.get("content-type") ?? "";
     let json: unknown;
