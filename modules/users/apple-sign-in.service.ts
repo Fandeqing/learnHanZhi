@@ -151,7 +151,7 @@ function earliestDate(first: Date | null, second: Date | null) {
   return first < second ? first : second;
 }
 
-async function verifyAppleIdentityToken(identityToken: string) {
+export async function verifyAppleIdentityToken(identityToken: string) {
   const [encodedHeader, encodedPayload, encodedSignature] = identityToken.split(".");
   if (!encodedHeader || !encodedPayload || !encodedSignature) {
     throw new ApiError(401, "INVALID_APPLE_IDENTITY_TOKEN", "Invalid Apple identity token.");
