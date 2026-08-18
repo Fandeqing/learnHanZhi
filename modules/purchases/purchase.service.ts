@@ -28,6 +28,28 @@ export const iosPurchaseRestoreSchema = z.object({
     .min(1, "originalTransactionId is required."),
 });
 
+export function assertTransactionOwnership(
+  currentUserId: string,
+  existingOwnerId: string | null,
+  appAccountToken: string | null,
+) {
+  const normalizedUserId = currentUserId.toLowerCase();
+  if (existingOwnerId && existingOwnerId.toLowerCase() !== normalizedUserId) {
+    throw new ApiError(
+      409,
+      "APPLE_TRANSACTION_ALREADY_OWNED",
+      "This App Store transaction is already linked to another account.",
+    );
+  }
+  if (!existingOwnerId && appAccountToken?.toLowerCase() !== normalizedUserId) {
+    throw new ApiError(
+      409,
+      "APPLE_TRANSACTION_OWNERSHIP_MISMATCH",
+      "This App Store transaction was not created for the current account.",
+    );
+  }
+}
+
 export async function verifyIosPurchase(
   userId: string,
   input: z.infer<typeof iosPurchaseVerifySchema>,
@@ -79,20 +101,11 @@ export async function applyVerifiedLifetimeProPurchase(
     });
     const ownedPurchase = existingPurchase ?? existingOriginalPurchase;
 
-    if (ownedPurchase && ownedPurchase.userId !== userId) {
-      throw new ApiError(
-        409,
-        "APPLE_TRANSACTION_ALREADY_OWNED",
-        "This App Store transaction is already linked to another account.",
-      );
-    }
-    if (!ownedPurchase && data.appAccountToken !== userId) {
-      throw new ApiError(
-        409,
-        "APPLE_TRANSACTION_OWNERSHIP_MISMATCH",
-        "This App Store transaction was not created for the current account.",
-      );
-    }
+    assertTransactionOwnership(
+      userId,
+      ownedPurchase?.userId ?? null,
+      data.appAccountToken,
+    );
 
     if (
       ownedPurchase &&

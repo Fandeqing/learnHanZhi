@@ -219,7 +219,7 @@ export function validateLifetimeProTransaction(
     revokedAt: transaction.revocationDate
       ? new Date(transaction.revocationDate)
       : null,
-    appAccountToken: transaction.appAccountToken ?? null,
+    appAccountToken: transaction.appAccountToken?.toLowerCase() ?? null,
   };
 }
 

@@ -4,7 +4,8 @@ This schema targets Railway PostgreSQL with Prisma. Set `DATABASE_URL` to the Ra
 
 ## Models
 
-- `User`: anonymous app user identified by `deviceId`; stores the current Lifetime Pro entitlement snapshot.
+- `User`: anonymous or Apple-linked account; stores the current Lifetime Pro entitlement snapshot.
+- `UserDevice`: maps one or more installations to a user without treating a client-supplied user ID as authentication.
 - `UserSetting`: one settings row per user; stores daily new character goal, audio preferences, and current section.
 - `Section`: five learning sections spanning 25 levels and 500 characters.
 - `Character`: canonical Hanzi card content, including pinyin, English meaning, memory hook, section, order, difficulty, audio text, and free access flag.
@@ -21,7 +22,7 @@ This schema targets Railway PostgreSQL with Prisma. Set `DATABASE_URL` to the Ra
 - `study_session_cards(sessionId)` loads all cards in a session quickly.
 - `study_session_cards(userId, characterId)` supports learning history for one user/card pair.
 - `purchases(transactionId)` is unique to prevent duplicate Apple transaction processing.
-- `purchases(originalTransactionId)` supports Apple restore and entitlement reconciliation.
+- `purchases(originalTransactionId, environment)` is unique for idempotent Apple restore and entitlement reconciliation.
 
 ## Why No `collections` or `seal_book` Table Yet
 
@@ -85,4 +86,4 @@ Seed `sections` first:
 - `school_and_city`: Levels `16-20`, order `4`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 - `work_and_world`: Levels `21-25`, order `5`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
 
-Then seed 500 `characters`, 100 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30-50 Basics characters, and `false` for the remaining characters.
+Then seed 500 `characters`, 100 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30 Basics characters, and `false` for the remaining characters.

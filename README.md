@@ -43,6 +43,13 @@ the base64-encoded contents of the `.p8` file. TestFlight transactions are
 looked up in Apple's sandbox after a production lookup returns transaction not
 found. Production and sandbox purchases are recorded separately.
 
+Configure App Store Server Notifications V2 in App Store Connect to send both
+production and sandbox notifications to:
+
+```text
+https://<your-backend-domain>/api/purchases/ios/notifications
+```
+
 The iOS target includes the Sign in with Apple entitlement. Also enable the same capability for both App IDs in Apple Developer and regenerate the provisioning profiles before shipping.
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
