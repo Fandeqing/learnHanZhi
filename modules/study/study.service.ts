@@ -50,6 +50,34 @@ const sessionInclude = {
   },
 } satisfies Prisma.StudySessionInclude;
 
+const newCharacterSessionTypes = [
+  StudySessionType.DAILY,
+  StudySessionType.LEARN_MORE,
+];
+
+async function findActiveNewCharacterSession(
+  tx: Prisma.TransactionClient,
+  userId: string,
+) {
+  await tx.$queryRaw`
+    SELECT "id"
+    FROM "users"
+    WHERE "id" = ${userId}::uuid
+    FOR UPDATE
+  `;
+
+  return tx.studySession.findFirst({
+    where: {
+      userId,
+      sessionType: { in: newCharacterSessionTypes },
+      completedAt: null,
+      abandonedAt: null,
+    },
+    orderBy: { startedAt: "desc" },
+    include: sessionInclude,
+  });
+}
+
 export const learnMoreSchema = z.object({
   count: z.number().int().positive().max(50).default(5).optional(),
   sectionId: z.string().uuid().optional(),
@@ -114,6 +142,9 @@ export async function createDailyStudySession(userId: string) {
   }
 
   const session = await prisma.$transaction(async (tx) => {
+    const activeSession = await findActiveNewCharacterSession(tx, userId);
+    if (activeSession) return activeSession;
+
     const freeAllowance = user.isPro
       ? null
       : await getFreeNewCharacterAllowance(tx, {
@@ -301,6 +332,9 @@ export async function createLearnMoreSession(
   }
 
   const session = await prisma.$transaction(async (tx) => {
+    const activeSession = await findActiveNewCharacterSession(tx, userId);
+    if (activeSession) return activeSession;
+
     const freeAllowance = user.isPro
       ? null
       : await getFreeNewCharacterAllowance(tx, {
@@ -1093,6 +1127,30 @@ export async function completeStudySession(userId: string, sessionId: string) {
     newCharacters,
     reviewedCharacters,
   };
+}
+
+export async function abandonStudySession(userId: string, sessionId: string) {
+  const result = await prisma.studySession.updateMany({
+    where: {
+      id: sessionId,
+      userId,
+      completedAt: null,
+      abandonedAt: null,
+    },
+    data: { abandonedAt: new Date() },
+  });
+
+  if (result.count === 0) {
+    const session = await prisma.studySession.findFirst({
+      where: { id: sessionId, userId },
+      select: { id: true, completedAt: true, abandonedAt: true },
+    });
+    if (!session) {
+      throw new ApiError(404, "SESSION_NOT_FOUND", "Study session not found.");
+    }
+  }
+
+  return { abandoned: true };
 }
 
 export async function createManualReviewSession(userId: string, characterId: string) {

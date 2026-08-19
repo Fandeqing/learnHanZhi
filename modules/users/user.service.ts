@@ -1,13 +1,19 @@
 import { z } from "zod";
+import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import {
   getBasicsSection,
   refreshUserSectionUnlocks,
 } from "@/modules/sections/section.service";
 import { createSessionToken } from "@/lib/session-token";
+import {
+  hashDeviceCredential,
+  matchesDeviceCredential,
+} from "@/lib/device-credential";
 
 export const anonymousUserSchema = z.object({
   deviceId: z.string().trim().min(1, "deviceId is required."),
+  deviceCredential: z.string().trim().min(32).max(512),
   studyTimeZone: z.string().trim().min(1).max(80).optional(),
 });
 
@@ -18,7 +24,7 @@ export const completeOnboardingSchema = z.object({
 });
 
 export async function createAnonymousUser(input: z.infer<typeof anonymousUserSchema>) {
-  const { deviceId, studyTimeZone } = anonymousUserSchema.parse(input);
+  const { deviceId, deviceCredential, studyTimeZone } = anonymousUserSchema.parse(input);
   const basics = await getBasicsSection();
   const validStudyTimeZone = normalizeStudyTimeZone(studyTimeZone);
 
@@ -28,6 +34,24 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
       include: { user: { include: { settings: true } } },
     });
     if (existingDevice) {
+      if (
+        existingDevice.credentialHash &&
+        !matchesDeviceCredential(deviceCredential, existingDevice.credentialHash)
+      ) {
+        throw new ApiError(
+          401,
+          "INVALID_DEVICE_CREDENTIAL",
+          "This installation could not be authenticated.",
+        );
+      }
+      if (!existingDevice.credentialHash && existingDevice.user.appleSubject) {
+        throw new ApiError(
+          401,
+          "APPLE_SIGN_IN_REQUIRED",
+          "Sign in with Apple to restore this account.",
+        );
+      }
+
       const upsertedUser = await tx.user.update({
         where: { id: existingDevice.userId },
         data: {
@@ -46,14 +70,26 @@ export async function createAnonymousUser(input: z.infer<typeof anonymousUserSch
         },
         include: { settings: true },
       });
-      await tx.userDevice.update({ where: { id: existingDevice.id }, data: { lastSeenAt: new Date() } });
+      await tx.userDevice.update({
+        where: { id: existingDevice.id },
+        data: {
+          credentialHash:
+            existingDevice.credentialHash ?? hashDeviceCredential(deviceCredential),
+          lastSeenAt: new Date(),
+        },
+      });
       await refreshUserSectionUnlocks(upsertedUser.id, tx);
       return upsertedUser;
     }
 
     const createdUser = await tx.user.create({
       data: {
-        devices: { create: { deviceId } },
+        devices: {
+          create: {
+            deviceId,
+            credentialHash: hashDeviceCredential(deviceCredential),
+          },
+        },
         settings: {
           create: {
             dailyNewCharacterGoal: 5,

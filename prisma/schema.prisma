@@ -81,12 +81,13 @@ model User {
 }
 
 model UserDevice {
-  id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
-  deviceId   String   @unique
-  lastSeenAt DateTime @default(now()) @db.Timestamptz(6)
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @db.Uuid
+  deviceId       String   @unique
+  credentialHash String?
+  lastSeenAt     DateTime @default(now()) @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -200,6 +201,7 @@ model StudySession {
   completedCount Int              @default(0)
   startedAt      DateTime         @default(now()) @db.Timestamptz(6)
   completedAt    DateTime?        @db.Timestamptz(6)
+  abandonedAt    DateTime?        @db.Timestamptz(6)
   createdAt      DateTime         @default(now()) @db.Timestamptz(6)
   updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
 
@@ -210,6 +212,7 @@ model StudySession {
   reviewSubmissions         ReviewSubmission[]
 
   @@index([userId, startedAt])
+  @@index([userId, completedAt, abandonedAt])
   @@index([sessionType])
   @@index([sectionId])
   @@map("study_sessions")

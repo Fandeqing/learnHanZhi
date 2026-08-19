@@ -5,6 +5,14 @@ import {
   deleteAccount,
 } from "@/modules/users/account-deletion.service";
 
+export async function GET(request: Request) {
+  try {
+    return ok(await requireUser(request));
+  } catch (error) {
+    return handleRouteError(error);
+  }
+}
+
 export async function DELETE(request: Request) {
   try {
     const user = await requireUser(request);
