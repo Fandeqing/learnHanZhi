@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CharacterStatus } from "@prisma/client";
-import { selectReviewCandidates, type ReviewCandidate } from "./review-candidates";
+import {
+  reviewCandidateWhere,
+  selectReviewCandidates,
+  type ReviewCandidate,
+} from "./review-candidates";
 
 const now = new Date("2026-07-13T00:00:00.000Z");
 
@@ -53,5 +57,20 @@ describe("selectReviewCandidates", () => {
 
     expect(selected).toHaveLength(1);
     expect(selected[0].status).toBe(CharacterStatus.MASTERED);
+  });
+});
+
+describe("reviewCandidateWhere", () => {
+  it("only includes characters that completed their initial learning card", () => {
+    const userId = "user-id";
+
+    expect(reviewCandidateWhere({ userId, isPro: false })).toMatchObject({
+      userId,
+      character: {
+        dailyCompletions: {
+          some: { userId },
+        },
+      },
+    });
   });
 });

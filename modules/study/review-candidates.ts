@@ -30,6 +30,11 @@ export function reviewCandidateWhere(input: {
   return {
     userId: input.userId,
     status: { in: reviewStatuses },
+    character: {
+      dailyCompletions: {
+        some: { userId: input.userId },
+      },
+    },
   };
 }
 
