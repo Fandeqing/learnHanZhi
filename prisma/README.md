@@ -80,10 +80,10 @@ model UserCollectionPiece {
 
 Seed `sections` first:
 
-- `basics`: Levels `1-3`, order `1`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
-- `people_and_home`: Levels `4-6`, order `2`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
-- `daily_life`: Levels `7-9`, order `3`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
-- `around_town`: Levels `10-12`, order `4`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
-- `work_and_world`: Levels `13-15`, order `5`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `basics` / Foundations: Levels `1-3`, order `1`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `people_and_home` / People & Actions: Levels `4-6`, order `2`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `daily_life` / Home & Daily Life: Levels `7-9`, order `3`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `around_town` / Nature & Movement: Levels `10-12`, order `4`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `work_and_world` / Communication & Connections: Levels `13-15`, order `5`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
 
 Then import `data/hanzi_300_launch_final.json`: 300 `characters`, 60 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30 Basics characters, and `false` for the remaining characters.

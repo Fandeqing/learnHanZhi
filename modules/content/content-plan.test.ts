@@ -74,6 +74,16 @@ describe("launch course plan", () => {
     ]);
     expect(contentSectionForLevel(16)).toBeNull();
   });
+
+  it("uses the final launch section names", () => {
+    expect(CONTENT_SECTIONS.map((section) => section.name)).toEqual([
+      "Foundations",
+      "People & Actions",
+      "Home & Daily Life",
+      "Nature & Movement",
+      "Communication & Connections",
+    ]);
+  });
 });
 
 describe("hanzi_300_launch_final.json", () => {
