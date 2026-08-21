@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Hanzi Support · Learn Hanzi Card",
+  title: "Chinese Character Support · Chinese Character Cards",
   description: "Get help with purchases, account access, learning progress, and app issues.",
 };
 
@@ -18,9 +18,9 @@ export default function SupportPage() {
   return (
     <main className="min-h-screen w-full bg-[#fffaf0] px-6 py-12 text-slate-800">
       <div className="mx-auto max-w-3xl">
-        <h1 className="text-4xl font-bold text-slate-950">Hanzi Support</h1>
+        <h1 className="text-4xl font-bold text-slate-950">Chinese Character Support</h1>
         <p className="mt-3 text-lg leading-8 text-slate-600">
-          Need help with Hanzi? We&apos;re here to help.
+          Need help learning Chinese characters? We&apos;re here to help.
         </p>
 
         <div className="mt-10 space-y-8 leading-7">

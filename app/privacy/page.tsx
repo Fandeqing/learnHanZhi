@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Privacy Policy · Learn Hanzi Card" };
+export const metadata: Metadata = { title: "Privacy Policy · Chinese Character Cards" };
 
 export default function PrivacyPolicyPage() {
   return (
@@ -13,7 +13,7 @@ export default function PrivacyPolicyPage() {
         <section>
           <h2 className="text-xl font-semibold text-slate-950">Information we process</h2>
           <p className="mt-2">
-            Learn Hanzi Card creates an account and device identifier so it can save your settings,
+            Chinese Character Cards creates an account and device identifier so it can save your settings,
             learning progress, review history, and completed lessons. If you choose Sign in with
             Apple, we receive Apple&apos;s app-specific account identifier. We do not receive your Apple
             password.

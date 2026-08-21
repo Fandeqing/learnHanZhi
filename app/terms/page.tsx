@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-export const metadata: Metadata = { title: "Terms of Service · Learn Hanzi Card" };
+export const metadata: Metadata = { title: "Terms of Service · Chinese Character Cards" };
 
 export default function TermsPage() {
   return (
@@ -13,7 +13,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-xl font-semibold text-slate-950">Using the app</h2>
           <p className="mt-2">
-            Learn Hanzi Card is an educational tool. You may use it for personal, lawful learning. You
+            Chinese Character Cards is an educational tool. You may use it for personal, lawful learning. You
             may not interfere with the service, attempt unauthorized access, automate abusive requests,
             or copy and redistribute protected app content except where law permits.
           </p>
@@ -23,7 +23,7 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold text-slate-950">Lifetime Pro</h2>
           <p className="mt-2">
             Lifetime Pro is a one-time in-app purchase that unlocks the advertised Pro features for the
-            supported lifetime of Learn Hanzi Card. It is not a subscription. Purchases are billed and
+            supported lifetime of Chinese Character Cards. It is not a subscription. Purchases are billed and
             managed by Apple and can be restored using the Apple account that made the purchase. Refunds
             are handled under Apple&apos;s policies.
           </p>
@@ -33,7 +33,7 @@ export default function TermsPage() {
           <h2 className="text-xl font-semibold text-slate-950">Accounts and deletion</h2>
           <p className="mt-2">
             You are responsible for access to your device and Apple account. You may delete your Learn
-            Hanzi Card account from Settings. Deletion permanently removes learning progress and
+            Chinese Character Cards account from Settings. Deletion permanently removes learning progress and
             settings; a minimal purchase record may remain so permanent purchases can be restored and
             fraud or accounting obligations can be handled.
           </p>
