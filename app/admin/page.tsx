@@ -105,7 +105,7 @@ export default function AdminPage() {
 
   async function replaceSelectedFile() {
     const confirmed = window.confirm(
-      "Replace the full character dataset? The file must contain exactly 500 characters. This deletes all existing characters and every user's learning progress and study history. User accounts, settings, and purchases stay.",
+      "Replace the full character dataset? The file must contain exactly 300 characters. Existing learning history is preserved but removed course characters will no longer appear in the app.",
     );
 
     if (confirmed) {
@@ -115,7 +115,7 @@ export default function AdminPage() {
 
   async function replacePastedJson() {
     const confirmed = window.confirm(
-      "Replace the full character dataset? The pasted JSON must contain exactly 500 characters. This deletes all existing characters and every user's learning progress and study history. User accounts, settings, and purchases stay.",
+      "Replace the full character dataset? The pasted JSON must contain exactly 300 characters. Existing learning history is preserved but removed course characters will no longer appear in the app.",
     );
 
     if (!confirmed) {
@@ -188,7 +188,7 @@ export default function AdminPage() {
             Character JSON Import
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-            Upload a file like <code className="text-zinc-200">data/data.json</code>{" "}
+            Upload <code className="text-zinc-200">data/hanzi_300_launch_final.json</code>{" "}
             to insert or update rows in the <code className="text-zinc-200">characters</code>{" "}
             table. Existing characters are matched by <code className="text-zinc-200">hanzi</code>.
           </p>
@@ -214,9 +214,9 @@ export default function AdminPage() {
         <section className="rounded border border-amber-900/60 bg-amber-950/20 p-4">
           <h2 className="text-lg font-semibold text-amber-100">Full Dataset Replacement</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100/70">
-            The replacement actions below require the complete 500-character, 25-level JSON.
-            They delete existing characters and all character-dependent learning data before
-            importing. User accounts, settings, and purchases are preserved.
+            The replacement actions below require the complete 300-character, 15-level JSON.
+            Existing learning history is preserved, while characters outside the current course
+            stop appearing in content, progress, and review APIs.
           </p>
         </section>
 
@@ -335,7 +335,7 @@ export default function AdminPage() {
           <pre className="max-h-[460px] overflow-auto rounded bg-black p-4 text-xs leading-5 text-zinc-200">
             {result
               ? JSON.stringify(result.body, null, 2)
-              : "Choose data/data.json and click Import File."}
+              : "Choose data/hanzi_300_launch_final.json and click Import File."}
           </pre>
         </section>
 

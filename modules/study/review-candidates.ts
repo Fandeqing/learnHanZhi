@@ -1,4 +1,5 @@
 import { CharacterStatus, Prisma } from "@prisma/client";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 export const reviewStatuses = [
   CharacterStatus.LEARNING,
@@ -31,6 +32,7 @@ export function reviewCandidateWhere(input: {
     userId: input.userId,
     status: { in: reviewStatuses },
     character: {
+      ...currentCourseCharacterWhere(),
       dailyCompletions: {
         some: { userId: input.userId },
       },

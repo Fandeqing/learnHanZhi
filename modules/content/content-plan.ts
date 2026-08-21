@@ -1,7 +1,7 @@
 export const LEVEL_SIZE = 20;
-export const LEVELS_PER_SECTION = 5;
+export const LEVELS_PER_SECTION = 3;
 export const SECTION_CHARACTER_COUNT = LEVEL_SIZE * LEVELS_PER_SECTION;
-export const SECTION_UNLOCK_LEARNED_REQUIRED = 67;
+export const SECTION_UNLOCK_LEARNED_REQUIRED = 40;
 
 export const CONTENT_SECTIONS = [
   {
@@ -26,10 +26,10 @@ export const CONTENT_SECTIONS = [
     orderIndex: 3,
   },
   {
-    key: "school_and_city",
-    name: "School & City",
+    key: "around_town",
+    name: "Around Town",
     subtitle: "校园与城市",
-    description: "Characters for school, places, and getting around town.",
+    description: "Characters for places, travel, and getting around town.",
     orderIndex: 4,
   },
   {
@@ -45,6 +45,7 @@ export type ContentSectionKey = (typeof CONTENT_SECTIONS)[number]["key"];
 
 export const TOTAL_LEVELS = CONTENT_SECTIONS.length * LEVELS_PER_SECTION;
 export const TOTAL_CHARACTERS = TOTAL_LEVELS * LEVEL_SIZE;
+export const CONTENT_SECTION_KEYS = CONTENT_SECTIONS.map((section) => section.key);
 
 export function contentSectionForLevel(level: number) {
   const sectionIndex = Math.floor((level - 1) / LEVELS_PER_SECTION);

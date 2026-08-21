@@ -2,14 +2,15 @@ import { CharacterStatus } from "@prisma/client";
 import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { serializeCharacter } from "@/modules/shared/serializers";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 export async function getCharacterDetail(
   userId: string,
   characterId: string,
   sessionId?: string | null,
 ) {
-  const character = await prisma.character.findUnique({
-    where: { id: characterId },
+  const character = await prisma.character.findFirst({
+    where: { id: characterId, ...currentCourseCharacterWhere() },
   });
 
   if (!character) {

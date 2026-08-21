@@ -10,6 +10,7 @@ import {
   TOTAL_LEVELS,
   contentSectionForLevel,
 } from "@/modules/content/content-plan";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 import { ensureDefaultSections } from "@/modules/sections/section.service";
 
 export type CharacterImportMode = "upsert" | "replace";
@@ -75,8 +76,8 @@ export async function importCharactersFromJson(
 
   try {
     const result = await prisma.$transaction(async (tx) => {
-      const deleted =
-        mode === "replace" ? await clearCharacterDataset(tx) : null;
+      const archivedCharacters =
+        mode === "replace" ? await archiveCurrentCharacterDataset(tx) : null;
       const existingCharacters = await tx.character.findMany({
         where: {
           hanzi: {
@@ -136,8 +137,10 @@ export async function importCharactersFromJson(
       }
 
       return {
-        totalCharacters: await tx.character.count(),
-        deleted,
+        totalCharacters: await tx.character.count({
+          where: currentCourseCharacterWhere(),
+        }),
+        archivedCharacters,
       };
     }, {
       maxWait: 10_000,
@@ -151,7 +154,7 @@ export async function importCharactersFromJson(
       updatedCount,
       totalCharacters: result.totalCharacters,
       sectionKeys,
-      deleted: result.deleted,
+      archivedCharacters: result.archivedCharacters,
     };
   } catch (error) {
     if (
@@ -254,22 +257,13 @@ function validateFullDataset(items: CharacterImportItem[]) {
   }
 }
 
-async function clearCharacterDataset(tx: Prisma.TransactionClient) {
-  const deletedDailyCompletions = await tx.dailyCharacterCompletion.deleteMany();
-  const deletedStudySessionCards = await tx.studySessionCard.deleteMany();
-  const deletedStudySessions = await tx.studySession.deleteMany();
-  const deletedProgress = await tx.userCharacterProgress.deleteMany();
-  const deletedSectionUnlocks = await tx.userSectionUnlock.deleteMany();
-  const deletedCharacters = await tx.character.deleteMany();
+async function archiveCurrentCharacterDataset(tx: Prisma.TransactionClient) {
+  const archived = await tx.character.updateMany({
+    where: currentCourseCharacterWhere(),
+    data: { orderIndex: { increment: 1_000_000 } },
+  });
 
-  return {
-    dailyCharacterCompletions: deletedDailyCompletions.count,
-    studySessionCards: deletedStudySessionCards.count,
-    studySessions: deletedStudySessions.count,
-    userCharacterProgress: deletedProgress.count,
-    userSectionUnlocks: deletedSectionUnlocks.count,
-    characters: deletedCharacters.count,
-  };
+  return archived.count;
 }
 
 function validateNoDuplicateKeys(items: CharacterImportItem[]) {

@@ -1,14 +1,21 @@
 import { prisma } from "@/lib/db";
+import {
+  currentCourseCharacterWhere,
+  currentCourseSectionWhere,
+} from "@/modules/content/current-course";
 
 export async function getCharacterDataPackage() {
   const [sections, characters, latestCharacter] = await Promise.all([
     prisma.section.findMany({
+      where: currentCourseSectionWhere(),
       orderBy: { orderIndex: "asc" },
     }),
     prisma.character.findMany({
+      where: currentCourseCharacterWhere(),
       orderBy: [{ sectionId: "asc" }, { orderIndex: "asc" }],
     }),
     prisma.character.findFirst({
+      where: currentCourseCharacterWhere(),
       orderBy: { updatedAt: "desc" },
       select: { updatedAt: true },
     }),

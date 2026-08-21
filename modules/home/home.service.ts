@@ -25,6 +25,8 @@ import {
   reviewSessionLimit,
   selectReviewCandidates,
 } from "@/modules/study/review-candidates";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
+import { TOTAL_LEVELS } from "@/modules/content/content-plan";
 
 export async function getHome(userId: string) {
   const now = new Date();
@@ -38,7 +40,12 @@ export async function getHome(userId: string) {
   const studyDateBounds = getStudyDateUtcBounds(studyDate, settings.studyTimeZone);
 
   const currentSection = settings.currentSectionId
-    ? await prisma.section.findUnique({ where: { id: settings.currentSectionId } })
+    ? await prisma.section.findFirst({
+        where: {
+          id: settings.currentSectionId,
+          characters: { some: currentCourseCharacterWhere() },
+        },
+      })
     : null;
 
   if (!currentSection) {
@@ -92,12 +99,15 @@ export async function getHome(userId: string) {
     bamboo,
     freeNewCharacterCompletions,
   ] = await Promise.all([
-    prisma.dailyCharacterCompletion.count({ where: { userId, studyDate } }),
+    prisma.dailyCharacterCompletion.count({
+      where: { userId, studyDate, character: currentCourseCharacterWhere() },
+    }),
     prisma.dailyCharacterCompletion.findMany({
       where: {
         userId,
         studyDate,
         cardType: StudyCardType.NEW,
+        character: currentCourseCharacterWhere(),
       },
       orderBy: { createdAt: "asc" },
       include: {
@@ -126,25 +136,34 @@ export async function getHome(userId: string) {
       where: {
         userId,
         status: CharacterStatus.MASTERED,
-        character: user.isPro ? undefined : { isFree: true },
+        character: {
+          ...currentCourseCharacterWhere(),
+          ...(user.isPro ? {} : { isFree: true }),
+        },
       },
     }),
     prisma.userCharacterProgress.count({
       where: {
         userId,
         status: { in: [CharacterStatus.LEARNED, CharacterStatus.MASTERED] },
-        character: user.isPro ? undefined : { isFree: true },
+        character: {
+          ...currentCourseCharacterWhere(),
+          ...(user.isPro ? {} : { isFree: true }),
+        },
       },
     }),
     prisma.character.count({
-      where: user.isPro ? undefined : { isFree: true },
+      where: {
+        ...currentCourseCharacterWhere(),
+        ...(user.isPro ? {} : { isFree: true }),
+      },
     }),
     getBambooProgress(userId),
     prisma.dailyCharacterCompletion.findMany({
       where: {
         userId,
         cardType: StudyCardType.NEW,
-        character: { isFree: true },
+        character: { ...currentCourseCharacterWhere(), isFree: true },
       },
       distinct: ["characterId"],
       select: { characterId: true },
@@ -199,6 +218,7 @@ export async function getHome(userId: string) {
     ...completedNewCharacters,
     ...plannedNewCharacters,
   ];
+  const isCourseComplete = bamboo.completedLevelsCount >= TOTAL_LEVELS;
 
   return {
     todayNewGoal: dailyNewGoal,
@@ -213,6 +233,7 @@ export async function getHome(userId: string) {
     learnedCount,
     toLearnCount: Math.max(accessibleCharacterCount - learnedCount, 0),
     isDailyLearningComplete: isTodayComplete,
+    isCourseComplete,
     hasReviewCards: reviewDeck.length > 0,
     dailyNewCharacterCount,
     totalCards,
@@ -261,7 +282,7 @@ function serializeCharacterSummary(character: {
 
 async function getSealBookPreview(userId: string, sectionId: string) {
   const characters = await prisma.character.findMany({
-    where: { sectionId },
+    where: { sectionId, ...currentCourseCharacterWhere() },
     orderBy: { orderIndex: "asc" },
     take: 10,
     include: {

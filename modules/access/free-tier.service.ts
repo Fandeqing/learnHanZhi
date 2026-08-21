@@ -1,5 +1,6 @@
 import { Prisma, StudyCardType, type PrismaClient } from "@prisma/client";
 import { isSameStudyDate, toStudyDate } from "@/modules/shared/dates";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 export const FREE_CHARACTER_LIMIT = 30;
 export const FREE_DAILY_NEW_CHARACTER_LIMIT = 10;
@@ -24,7 +25,7 @@ export async function getFreeNewCharacterAllowance(
     client.dailyCharacterCompletion.findMany({
       where: {
         userId: input.userId,
-        character: { isFree: true },
+        character: { ...currentCourseCharacterWhere(), isFree: true },
         cardType: StudyCardType.NEW,
       },
       distinct: ["characterId"],
@@ -40,7 +41,7 @@ export async function getFreeNewCharacterAllowance(
     client.userCharacterProgress.findFirst({
       where: {
         userId: input.userId,
-        character: { isFree: true },
+        character: { ...currentCourseCharacterWhere(), isFree: true },
       },
       orderBy: { createdAt: "asc" },
       select: { createdAt: true },

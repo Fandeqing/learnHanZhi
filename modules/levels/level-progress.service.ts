@@ -11,6 +11,7 @@ import {
   TOTAL_LEVELS,
   contentSectionForLevel,
 } from "@/modules/content/content-plan";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 export { LEVEL_SIZE, TOTAL_LEVELS } from "@/modules/content/content-plan";
 
@@ -166,6 +167,7 @@ export async function findAvailableNewCharactersForCurrentLevel(
   return client.character.findMany({
     where: {
       id: { in: candidateIds },
+      ...currentCourseCharacterWhere(),
       OR: [
         { userProgress: { none: { userId: input.userId } } },
         {
@@ -230,6 +232,7 @@ export async function getNewlyCompletedLevelIndexes(
 
 async function getOrderedCharacters(client: Client) {
   return client.character.findMany({
+    where: currentCourseCharacterWhere(),
     orderBy: [
       { section: { orderIndex: "asc" } },
       { orderIndex: "asc" },
@@ -246,16 +249,16 @@ function bucketCharacters(characters: OrderedCharacter[]) {
 }
 
 function levelTitle(levelIndex: number) {
-  const numberIndex = (levelIndex - 1) % 5;
+  const numberIndex = (levelIndex - 1) % 3;
   const section = contentSectionForLevel(levelIndex);
-  const numerals = ["I", "II", "III", "IV", "V"];
+  const numerals = ["I", "II", "III"];
   return `${section?.name ?? "Level"} ${numerals[numberIndex] ?? levelIndex}`;
 }
 
 function levelSubtitle(levelIndex: number) {
-  const numberIndex = (levelIndex - 1) % 5;
+  const numberIndex = (levelIndex - 1) % 3;
   const section = contentSectionForLevel(levelIndex);
-  const numerals = ["一", "二", "三", "四", "五"];
+  const numerals = ["一", "二", "三"];
   const numeral = numerals[numberIndex];
   return section && numeral ? `${section.subtitle} ${numeral}` : null;
 }

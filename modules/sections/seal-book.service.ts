@@ -3,6 +3,7 @@ import { ApiError } from "@/lib/api-error";
 import { prisma } from "@/lib/db";
 import { assertSectionUnlocked } from "@/modules/sections/section.service";
 import { publicStatus } from "@/modules/shared/serializers";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 export async function getSealBook(userId: string, sectionId: string) {
   try {
@@ -18,7 +19,7 @@ export async function getSealBook(userId: string, sectionId: string) {
   }
 
   const characters = await prisma.character.findMany({
-    where: { sectionId },
+    where: { sectionId, ...currentCourseCharacterWhere() },
     orderBy: { orderIndex: "asc" },
     include: {
       userProgress: {

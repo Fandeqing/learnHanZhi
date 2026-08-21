@@ -6,6 +6,10 @@ import {
   SECTION_CHARACTER_COUNT,
   SECTION_UNLOCK_LEARNED_REQUIRED,
 } from "@/modules/content/content-plan";
+import {
+  currentCourseCharacterWhere,
+  currentCourseSectionWhere,
+} from "@/modules/content/current-course";
 
 const defaultSections = CONTENT_SECTIONS.map((section) => ({
   key: section.key,
@@ -53,11 +57,12 @@ export async function getSectionsForUser(userId: string) {
   await refreshUserSectionUnlocks(userId);
 
   const sections = await prisma.section.findMany({
+    where: currentCourseSectionWhere(),
     orderBy: { orderIndex: "asc" },
     include: {
       _count: {
         select: {
-          characters: true,
+          characters: { where: currentCourseCharacterWhere() },
         },
       },
     },
@@ -82,6 +87,14 @@ export async function getSectionsForUser(userId: string) {
       index === 0 || previousLearnedCount >= requiredLearnedCount;
     const isUnlocked =
       liveThresholdUnlocked || unlockedSectionIds.has(section.id);
+    const totalCount = Math.min(
+      section._count.characters || section.totalCharacters,
+      SECTION_CHARACTER_COUNT,
+    );
+    const learnedCount = Math.min(
+      learnedBySectionId.get(section.id) ?? 0,
+      totalCount,
+    );
 
     return {
       id: section.id,
@@ -89,8 +102,8 @@ export async function getSectionsForUser(userId: string) {
       name: section.name,
       description: section.description,
       orderIndex: section.orderIndex,
-      learnedCount: learnedBySectionId.get(section.id) ?? 0,
-      totalCount: section._count.characters || section.totalCharacters,
+      learnedCount,
+      totalCount,
       isUnlocked,
       requiredLearnedCount,
       remainingToUnlock: isUnlocked
@@ -110,6 +123,7 @@ async function getCompletedNewCountsBySection(
     where: {
       userId,
       cardType: StudyCardType.NEW,
+      character: currentCourseCharacterWhere(),
     },
     distinct: ["characterId"],
     select: {
@@ -129,6 +143,7 @@ export async function refreshUserSectionUnlocks(
   client: Prisma.TransactionClient | typeof prisma = prisma,
 ) {
   const sections = await client.section.findMany({
+    where: currentCourseSectionWhere(),
     orderBy: { orderIndex: "asc" },
   });
 

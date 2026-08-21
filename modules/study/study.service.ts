@@ -36,6 +36,7 @@ import {
   selectReviewCandidates,
 } from "@/modules/study/review-candidates";
 import { completesSessionCard } from "@/modules/study/review-completion";
+import { currentCourseCharacterWhere } from "@/modules/content/current-course";
 
 const practiceSessionTypes = new Set<StudySessionType>([
   StudySessionType.PRACTICE_AGAIN,
@@ -72,6 +73,10 @@ async function findActiveNewCharacterSession(
       sessionType: { in: newCharacterSessionTypes },
       completedAt: null,
       abandonedAt: null,
+      cards: {
+        some: { character: currentCourseCharacterWhere() },
+        every: { character: currentCourseCharacterWhere() },
+      },
     },
     orderBy: { startedAt: "desc" },
     include: sessionInclude,
@@ -117,6 +122,7 @@ export async function createDailyStudySession(userId: string) {
       userId,
       studyDate,
       cardType: StudyCardType.NEW,
+      character: currentCourseCharacterWhere(),
     },
   });
   const initialFreeAllowance = user.isPro
@@ -164,7 +170,10 @@ export async function createDailyStudySession(userId: string) {
           ),
     });
 
-    if (!user.isPro && newCharacters.length === 0) {
+    if (newCharacters.length === 0) {
+      if (user.isPro) {
+        throw new ApiError(409, "COURSE_COMPLETE", "You have completed the full course.");
+      }
       return null;
     }
 
@@ -237,8 +246,8 @@ export async function createLearnMoreSession(
   ]);
   const [targetCharacter, targetProgress] = parsed.characterId
     ? await Promise.all([
-        prisma.character.findUnique({
-          where: { id: parsed.characterId },
+        prisma.character.findFirst({
+          where: { id: parsed.characterId, ...currentCourseCharacterWhere() },
         }),
         prisma.userCharacterProgress.findUnique({
           where: {
@@ -365,7 +374,10 @@ export async function createLearnMoreSession(
             take,
           });
 
-    if (!user.isPro && newCharacters.length === 0) {
+    if (newCharacters.length === 0) {
+      if (user.isPro) {
+        throw new ApiError(409, "COURSE_COMPLETE", "You have completed the full course.");
+      }
       return null;
     }
 
@@ -500,6 +512,7 @@ export async function createPracticeAgainSession(
       where: {
         userId,
         studyDate,
+        character: currentCourseCharacterWhere(),
       },
       orderBy: { createdAt: "desc" },
       include: { character: true },
@@ -514,6 +527,7 @@ export async function createPracticeAgainSession(
           userId,
           status: { in: reviewStatuses },
           characterId: { notIn: characterIds },
+          character: currentCourseCharacterWhere(),
         },
         orderBy: [{ lastReviewedAt: "desc" }, { updatedAt: "desc" }],
         take: count - characterIds.length,
@@ -581,6 +595,7 @@ async function findAvailableNewCharacters(
   return tx.character.findMany({
     where: {
       sectionId: input.sectionId,
+      ...currentCourseCharacterWhere(),
       ...(input.isPro ? {} : { isFree: true }),
       OR: [
         { userProgress: { none: { userId: input.userId } } },
@@ -635,7 +650,22 @@ async function createReviewOnlySession(
     characterIds: string[];
   },
 ) {
-  const uniqueCharacterIds = Array.from(new Set(input.characterIds));
+  const requestedCharacterIds = Array.from(new Set(input.characterIds));
+  const currentCharacters = await tx.character.findMany({
+    where: {
+      id: { in: requestedCharacterIds },
+      ...currentCourseCharacterWhere(),
+    },
+    select: { id: true },
+  });
+  const currentCharacterIds = new Set(currentCharacters.map((character) => character.id));
+  const uniqueCharacterIds = requestedCharacterIds.filter((id) =>
+    currentCharacterIds.has(id),
+  );
+
+  if (uniqueCharacterIds.length === 0) {
+    throw new ApiError(409, "NO_REVIEW_CARDS", "No review cards are available.");
+  }
   const createdSession = await tx.studySession.create({
     data: {
       userId: input.userId,
@@ -748,8 +778,8 @@ export async function submitReviewRating(
       },
     });
 
-    const character = await tx.character.findUnique({
-      where: { id: characterId },
+    const character = await tx.character.findFirst({
+      where: { id: characterId, ...currentCourseCharacterWhere() },
     });
 
     if (!character) {
@@ -879,6 +909,7 @@ export async function submitReviewRating(
       where: {
         userId,
         studyDate,
+        character: currentCourseCharacterWhere(),
       },
     });
 
@@ -1155,7 +1186,9 @@ export async function abandonStudySession(userId: string, sessionId: string) {
 
 export async function createManualReviewSession(userId: string, characterId: string) {
   const [character, progress] = await Promise.all([
-    prisma.character.findUnique({ where: { id: characterId } }),
+    prisma.character.findFirst({
+      where: { id: characterId, ...currentCourseCharacterWhere() },
+    }),
     prisma.userCharacterProgress.findUnique({
       where: {
         userId_characterId: {

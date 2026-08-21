@@ -7,7 +7,7 @@ This schema targets Railway PostgreSQL with Prisma. Set `DATABASE_URL` to the Ra
 - `User`: anonymous or Apple-linked account; stores the current Lifetime Pro entitlement snapshot.
 - `UserDevice`: maps one or more installations to a user without treating a client-supplied user ID as authentication.
 - `UserSetting`: one settings row per user; stores daily new character goal, audio preferences, and current section.
-- `Section`: five learning sections spanning 25 levels and 500 characters.
+- `Section`: five learning sections spanning 15 levels and 300 characters.
 - `Character`: canonical Hanzi card content, including pinyin, English meaning, memory hook, section, order, difficulty, audio text, and free access flag.
 - `UserCharacterProgress`: per-user SRS state for each character. The `(userId, characterId)` unique key ensures one progress row per user and card.
 - `StudySession`: one learning/review session, including counts and completion timestamps.
@@ -18,7 +18,7 @@ This schema targets Railway PostgreSQL with Prisma. Set `DATABASE_URL` to the Ra
 
 - `characters(sectionId, orderIndex)` is unique so each section has stable card ordering.
 - `user_character_progress(userId, status, nextReviewAt)` supports Today Deck queries for due reviews.
-- `user_character_progress(userId, sectionId, status)` supports section unlock checks like Learned count >= 67.
+- `user_character_progress(userId, sectionId, status)` supports section unlock checks like Learned count >= 40.
 - `study_session_cards(sessionId)` loads all cards in a session quickly.
 - `study_session_cards(userId, characterId)` supports learning history for one user/card pair.
 - `purchases(transactionId)` is unique to prevent duplicate Apple transaction processing.
@@ -80,10 +80,10 @@ model UserCollectionPiece {
 
 Seed `sections` first:
 
-- `basics`: Levels `1-5`, order `1`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `people_and_home`: Levels `6-10`, order `2`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `daily_life`: Levels `11-15`, order `3`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `school_and_city`: Levels `16-20`, order `4`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
-- `work_and_world`: Levels `21-25`, order `5`, `totalCharacters = 100`, `unlockLearnedRequired = 67`
+- `basics`: Levels `1-3`, order `1`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `people_and_home`: Levels `4-6`, order `2`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `daily_life`: Levels `7-9`, order `3`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `around_town`: Levels `10-12`, order `4`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
+- `work_and_world`: Levels `13-15`, order `5`, `totalCharacters = 60`, `unlockLearnedRequired = 40`
 
-Then seed 500 `characters`, 100 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30 Basics characters, and `false` for the remaining characters.
+Then import `data/hanzi_300_launch_final.json`: 300 `characters`, 60 per section and 20 per level. Mark the free tier with `isFree = true` for the first 30 Basics characters, and `false` for the remaining characters.

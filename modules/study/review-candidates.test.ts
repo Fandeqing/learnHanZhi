@@ -67,6 +67,18 @@ describe("reviewCandidateWhere", () => {
     expect(reviewCandidateWhere({ userId, isPro: false })).toMatchObject({
       userId,
       character: {
+        orderIndex: { gte: 1, lte: 300 },
+        section: {
+          key: {
+            in: [
+              "basics",
+              "people_and_home",
+              "daily_life",
+              "around_town",
+              "work_and_world",
+            ],
+          },
+        },
         dailyCompletions: {
           some: { userId },
         },

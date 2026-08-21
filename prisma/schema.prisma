@@ -119,8 +119,8 @@ model Section {
   name                  String
   description           String?
   orderIndex            Int      @unique
-  unlockLearnedRequired Int      @default(67)
-  totalCharacters       Int      @default(100)
+  unlockLearnedRequired Int      @default(40)
+  totalCharacters       Int      @default(60)
   createdAt             DateTime @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime @updatedAt @db.Timestamptz(6)
 
